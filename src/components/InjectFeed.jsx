@@ -1,9 +1,9 @@
 import React from "react";
 import { Terminal } from "lucide-react";
 
-export default function InjectFeed({ scenarioId }) {
+export default function InjectFeed({ scenarioId, className = '' }) {
     return (
-        <div className="bg-slate-950 rounded-xl border border-slate-800 p-6 min-h-[250px]">
+        <div className={`bg-slate-950 rounded-xl border border-slate-800 p-6 min-h-[250px] ${className}`}>
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                     <Terminal className="w-5 h-5 text-purple-500" />
