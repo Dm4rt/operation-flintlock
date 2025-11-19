@@ -1,1 +1,11 @@
 @import "tailwindcss";
+/* Debug/override rules to ensure team icons remain visible.
+	 These are intentionally specific and can be removed once the root cause is fixed. */
+.team-card svg {
+	opacity: 1 !important;
+	stroke: currentColor !important;
+	fill: none !important;
+}
+.team-card .rounded-full {
+	opacity: 1 !important;
+}
