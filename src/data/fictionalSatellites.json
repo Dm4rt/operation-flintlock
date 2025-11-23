@@ -1,0 +1,82 @@
+[
+  {
+    "id": "aehf-6",
+    "name": "AEHF-6",
+    "type": "comms",
+    "mission": "Protected Communications",
+    "orbitClass": "GEO",
+    "description": "Advanced EHF satellite - supports nuclear C2 & strategic strike comms",
+    "tle": {
+      "line1": "1 45893U 20072A   23365.50000000  .00000000  00000-0  00000+0 0  9999",
+      "line2": "2 45893   0.0205 180.8659 0001397  85.5839 274.5361  1.00271798  9999"
+    },
+    "fuelPoints": 100,
+    "status": {
+      "health": "nominal",
+      "asatRisk": "low",
+      "coverage": true,
+      "jammed": false
+    },
+    "priority": "critical"
+  },
+  {
+    "id": "gps-iii-5",
+    "name": "GPS III SV-05",
+    "type": "navigation",
+    "mission": "Navigation Support",
+    "orbitClass": "MEO",
+    "description": "GPS III satellite - critical for targeting & weapon employment",
+    "tle": {
+      "line1": "1 46826U 20007A   23365.50000000 -.00000023  00000-0  00000+0 0  9993",
+      "line2": "2 46826  55.0445 161.3421 0012456  28.1578 331.8917  2.00563406 99999"
+    },
+    "fuelPoints": 100,
+    "status": {
+      "health": "nominal",
+      "asatRisk": "medium",
+      "coverage": true,
+      "jammed": false
+    },
+    "priority": "high"
+  },
+  {
+    "id": "sbirs-geo-6",
+    "name": "SBIRS GEO-6",
+    "type": "missile_warning",
+    "mission": "Missile Warning / ASAT Detection",
+    "orbitClass": "GEO",
+    "description": "IR surveillance satellite - detects ASAT launches & missile threats",
+    "tle": {
+      "line1": "1 53053U 22095A   23365.50000000  .00000000  00000-0  00000+0 0  9990",
+      "line2": "2 53053   0.0124  90.4521 0001892 135.2145 224.9015  1.00271932  9999"
+    },
+    "fuelPoints": 100,
+    "status": {
+      "health": "nominal",
+      "asatRisk": "low",
+      "coverage": true,
+      "jammed": false
+    },
+    "priority": "critical"
+  },
+  {
+    "id": "sentinel-7",
+    "name": "VICTOR-7 (Sentinel)",
+    "type": "isr",
+    "mission": "Imagery / ISR",
+    "orbitClass": "LEO",
+    "description": "ISR satellite - provides imagery of target areas (fictional USSF asset)",
+    "tle": {
+      "line1": "1 99001U 23001A   23365.50000000  .00000123  00000-0  12345-4 0  9995",
+      "line2": "2 99001  97.4521  45.6789 0012345 234.5678 125.4321 15.19876543 12345"
+    },
+    "fuelPoints": 100,
+    "status": {
+      "health": "nominal",
+      "asatRisk": "high",
+      "coverage": false,
+      "jammed": false
+    },
+    "priority": "high"
+  }
+]

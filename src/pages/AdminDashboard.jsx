@@ -23,24 +23,24 @@ export default function AdminDashboard() {
     setLogs(prev => [{ time, msg }, ...prev]);
   };
 
-  const initializeScenario = () => {
+  const generateCode = () => {
     const id = "FLINT-" + Math.floor(Math.random() * 900 + 100);
     setScenarioId(id);
     setTimeLeft(config.roundDuration * 60);
-    addLog(`Scenario ${id} Initialized`);
+    addLog(`Code ${id} Generated`);
 
     // Create a session document in Firestore with initial state
     (async () => {
       try {
         const sessionRef = doc(db, "sessions", id);
-        // No auth required in current dev rules; leave admin null when unauthenticated.
         await setDoc(sessionRef, {
           createdAt: serverTimestamp(),
           admin: null,
           roundDuration: config.roundDuration,
           timeLeft: config.roundDuration * 60,
           isRunning: false,
-          logs: [{ time: new Date().toLocaleTimeString("en-US", { hour12: false }), msg: `Scenario ${id} Initialized` }],
+          operationStarted: false,
+          logs: [{ time: new Date().toLocaleTimeString("en-US", { hour12: false }), msg: `Code ${id} Generated` }],
           injects: [],
         });
         addLog(`Session ${id} created in Firestore`);
@@ -49,6 +49,12 @@ export default function AdminDashboard() {
         addLog(`Failed to create session: ${err.message}`);
       }
     })();
+  };
+
+  const initializeOperation = () => {
+    if (!scenarioId) return;
+    setIsRunning(true);
+    addLog(`Operation ${scenarioId} STARTED`);
   };
 
   // sync local state to firestore when admin triggers changes (start/stop/modify)
@@ -90,7 +96,7 @@ export default function AdminDashboard() {
     if (isRunning && !prev) {
       (async () => {
         try {
-          await update({ isRunning: true, startedAt: serverTimestamp(), timeLeftAtStart: timeLeft });
+          await update({ isRunning: true, operationStarted: true, startedAt: serverTimestamp(), timeLeftAtStart: timeLeft });
         } catch (e) {}
       })();
     }
@@ -181,17 +187,31 @@ export default function AdminDashboard() {
       <div className="mt-6 flex gap-4">
         <button 
           onClick={() => navigate("/")}
-          className="px-6 py-3 bg-slate-800 rounded-lg"
+          className="px-6 py-3 bg-slate-800 rounded-lg text-white"
         >
           Cancel
         </button>
 
-        <button 
-          onClick={initializeScenario}
-          className="px-8 py-3 bg-blue-600 rounded-lg text-white font-bold"
-        >
-          Initialize Operation
-        </button>
+        {!scenarioId ? (
+          <button 
+            onClick={generateCode}
+            className="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-white font-bold"
+          >
+            Generate Code
+          </button>
+        ) : (
+          <button 
+            onClick={initializeOperation}
+            disabled={isRunning}
+            className={`px-8 py-3 rounded-lg text-white font-bold ${
+              isRunning 
+                ? "bg-slate-600 cursor-not-allowed" 
+                : "bg-blue-600 hover:bg-blue-500"
+            }`}
+          >
+            {isRunning ? "Operation Running" : "Initialize Operation"}
+          </button>
+        )}
       </div>
     </div>
   );

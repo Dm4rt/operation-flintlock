@@ -84,31 +84,22 @@ export default function Timer({ timeLeft, setTimeLeft, isRunning, setIsRunning, 
                 </div>
             </div>
 
-            <div className="flex gap-3 w-full">
-                <button
-                    onClick={() => {
-                        setIsRunning(!isRunning);
-                        addLog(isRunning ? "Timer Paused" : "Timer Started");
-                    }}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-bold transition-colors ${
-                        isRunning
-                            ? "bg-yellow-600 hover:bg-yellow-500 text-white"
-                            : "bg-green-600 hover:bg-green-500 text-white"
-                    }`}
-                >
-                    {isRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                    {isRunning ? "PAUSE" : "START"}
-                </button>
-
+            <div className="flex gap-3 w-full justify-center">
                 <button
                     onClick={() => {
                         setTimeLeft(duration * 60);
                         setIsRunning(false);
                         addLog("Timer Reset");
                     }}
-                    className="px-4 py-3 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
+                    disabled={isRunning}
+                    className={`px-6 py-3 rounded-lg transition-colors flex items-center gap-2 ${
+                        isRunning 
+                            ? "bg-slate-900 text-slate-600 cursor-not-allowed" 
+                            : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    }`}
                 >
                     <RotateCcw className="w-5 h-5" />
+                    <span className="font-bold">RESET</span>
                 </button>
             </div>
         </div>
