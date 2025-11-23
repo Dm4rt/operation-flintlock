@@ -29,35 +29,35 @@ export default function SdaManeuverPlanner({ satellite, onPlanManeuver, onCommit
   const maneuvers = [
     { 
       type: MANEUVER_TYPES.RAISE_ORBIT, 
-      label: 'Prograde', 
+      label: 'Raise', 
       icon: ArrowUp,
       color: 'green',
       symbol: '⊕'
     },
     { 
       type: MANEUVER_TYPES.LOWER_ORBIT, 
-      label: 'Retrograde', 
+      label: 'Lower', 
       icon: ArrowDown,
       color: 'green',
       symbol: '⊖'
     },
     { 
       type: MANEUVER_TYPES.INCLINATION_CHANGE, 
-      label: 'Normal', 
+      label: 'Tilt', 
       icon: ArrowUp,
       color: 'purple',
       symbol: '△'
     },
     { 
       type: MANEUVER_TYPES.PHASE_FORWARD, 
-      label: 'Radial Out', 
+      label: 'Rotate Out', 
       icon: ChevronRight,
       color: 'cyan',
       symbol: '⊙'
     },
     { 
       type: MANEUVER_TYPES.PHASE_BACKWARD, 
-      label: 'Radial In', 
+      label: 'Rotate In', 
       icon: ChevronLeft,
       color: 'cyan',
       symbol: '⊗'
