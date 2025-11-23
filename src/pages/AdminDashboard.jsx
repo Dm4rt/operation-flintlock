@@ -4,6 +4,7 @@ import InjectFeed from "../components/InjectFeed";
 import SystemLog from "../components/SystemLog";
 import TeamStatus from "../components/TeamStatus";
 import useSession from "../hooks/useSession";
+import useCountdown from "../hooks/useCountdown";
 import { useNavigate } from "react-router-dom";
 import { db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
@@ -17,6 +18,14 @@ export default function AdminDashboard() {
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState([]);
   const { session, participants, update, pushInject } = useSession(scenarioId);
+  const { timeLeft: syncedTimeLeft } = useCountdown(scenarioId);
+
+  const formatTime = (seconds = 0) => {
+    const safe = Math.max(0, seconds || 0);
+    const mins = String(Math.floor(safe / 60)).padStart(2, "0");
+    const secs = String(safe % 60).padStart(2, "0");
+    return `${mins}:${secs}`;
+  };
 
   const addLog = (msg) => {
     const time = new Date().toLocaleTimeString("en-US", { hour12: false });
@@ -56,6 +65,17 @@ export default function AdminDashboard() {
     setIsRunning(true);
     addLog(`Operation ${scenarioId} STARTED`);
   };
+
+  // Automatically stop locally when synced timer reaches zero
+  useEffect(() => {
+    if (!isRunning) return;
+    if (syncedTimeLeft == null) return;
+    if (syncedTimeLeft > 0) return;
+
+    setIsRunning(false);
+    setTimeLeft(0);
+    addLog('Timer Ended');
+  }, [isRunning, syncedTimeLeft]);
 
   // sync local state to firestore when admin triggers changes (start/stop/modify)
   useEffect(() => {
@@ -163,14 +183,24 @@ export default function AdminDashboard() {
             </select>
           </div>
 
-          <Timer
-            timeLeft={timeLeft}
-            setTimeLeft={setTimeLeft}
-            isRunning={isRunning}
-            setIsRunning={setIsRunning}
-            addLog={addLog}
-            duration={config.roundDuration}
-          />
+          {isRunning && session?.startedAt ? (
+            <div className="bg-orange-600/90 rounded-xl border border-orange-400 px-6 py-8 text-center shadow-lg shadow-orange-500/40">
+              <p className="text-xs text-orange-100 uppercase tracking-widest font-bold">Mission Timer</p>
+              <div className="text-6xl font-mono font-black text-white mt-4">
+                {formatTime(syncedTimeLeft)}
+              </div>
+              <p className="text-xs text-orange-100/80 mt-3">Controlled by Mission Control</p>
+            </div>
+          ) : (
+            <Timer
+              timeLeft={timeLeft}
+              setTimeLeft={setTimeLeft}
+              isRunning={isRunning}
+              setIsRunning={setIsRunning}
+              addLog={addLog}
+              duration={config.roundDuration}
+            />
+          )}
 
           <TeamStatus sessionId={scenarioId} />
         </div>

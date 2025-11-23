@@ -13,6 +13,18 @@ export default function SdaManeuverPlanner({ satellite, onPlanManeuver, onCommit
 
   const recommendation = getManeuverRecommendation(satellite);
   const hasPlannedManeuver = plannedManeuver && plannedManeuver.satelliteId === satellite.id;
+  const defaultOffsets = { altitudeOffset: 0, phaseOffset: 0, inclinationOffset: 0 };
+  const plannedOffsets = hasPlannedManeuver
+    ? (plannedManeuver.previewSatellite?.maneuverOffsets || defaultOffsets)
+    : defaultOffsets;
+  const baseOffsets = hasPlannedManeuver
+    ? (plannedManeuver.baseOffsets || defaultOffsets)
+    : defaultOffsets;
+  const offsetDeltas = {
+    altitude: plannedOffsets.altitudeOffset - baseOffsets.altitudeOffset,
+    phase: plannedOffsets.phaseOffset - baseOffsets.phaseOffset,
+    inclination: plannedOffsets.inclinationOffset - baseOffsets.inclinationOffset
+  };
 
   const maneuvers = [
     { 
@@ -127,18 +139,20 @@ export default function SdaManeuverPlanner({ satellite, onPlanManeuver, onCommit
         <div className="bg-blue-900/30 border-2 border-blue-600 rounded-lg p-3">
           <p className="text-xs text-blue-400 font-bold uppercase mb-1">Maneuvers Planned</p>
           <div className="space-y-1">
-            {plannedManeuver.previewSatellite.maneuverOffsets && (
-              <>
-                {plannedManeuver.previewSatellite.maneuverOffsets.altitudeOffset !== 0 && (
-                  <p className="text-xs text-white">Altitude: {plannedManeuver.previewSatellite.maneuverOffsets.altitudeOffset > 0 ? '+' : ''}{plannedManeuver.previewSatellite.maneuverOffsets.altitudeOffset} km</p>
-                )}
-                {plannedManeuver.previewSatellite.maneuverOffsets.phaseOffset !== 0 && (
-                  <p className="text-xs text-white">Phase: {plannedManeuver.previewSatellite.maneuverOffsets.phaseOffset > 0 ? '+' : ''}{plannedManeuver.previewSatellite.maneuverOffsets.phaseOffset.toFixed(2)}</p>
-                )}
-                {plannedManeuver.previewSatellite.maneuverOffsets.inclinationOffset !== 0 && (
-                  <p className="text-xs text-white">Inclination: {plannedManeuver.previewSatellite.maneuverOffsets.inclinationOffset > 0 ? '+' : ''}{plannedManeuver.previewSatellite.maneuverOffsets.inclinationOffset}°</p>
-                )}
-              </>
+            {offsetDeltas.altitude !== 0 && (
+              <p className="text-xs text-white">
+                Altitude: {offsetDeltas.altitude > 0 ? '+' : ''}{offsetDeltas.altitude} km
+              </p>
+            )}
+            {offsetDeltas.phase !== 0 && (
+              <p className="text-xs text-white">
+                Phase: {offsetDeltas.phase > 0 ? '+' : ''}{offsetDeltas.phase.toFixed(2)}
+              </p>
+            )}
+            {offsetDeltas.inclination !== 0 && (
+              <p className="text-xs text-white">
+                Inclination: {offsetDeltas.inclination > 0 ? '+' : ''}{offsetDeltas.inclination}°
+              </p>
             )}
           </div>
           <p className="text-xs text-slate-400 mt-2">Preview orbit shown in dashed blue line</p>

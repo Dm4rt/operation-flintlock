@@ -73,7 +73,7 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
                     ))}
 
                     {/* Planned Maneuver Orbit Preview */}
-                    {showOrbits && plannedManeuver && plannedManeuver.previewSatellite && (
+                    {showOrbits && plannedManeuver && plannedManeuver.previewSatellite && selectedSatellite?.tle && (
                         <OrbitPath
                             key={`planned-${Date.now()}`}
                             tle={selectedSatellite.tle}

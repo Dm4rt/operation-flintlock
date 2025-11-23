@@ -5,7 +5,7 @@ import SdaManeuverPlanner from './SdaManeuverPlanner';
 import SdaInjectFeed from './SdaInjectFeed';
 import satellitesData from '../../data/fictionalSatellites.json';
 import { propagateSatellite } from '../../utils/orbitUtils';
-import { applyManeuver } from '../../utils/maneuverLogic';
+import { applyManeuver, applyManeuverOffsets } from '../../utils/maneuverLogic';
 import aehfImage from './assets/AEHF_1.jpg';
 import gpsImage from './assets/GPS_III.jpg';
 import sbirsImage from './assets/SBIRS.jpg';
@@ -140,11 +140,24 @@ export default function SdaDashboard({ sessionCode }) {
   const handlePlanManeuver = (maneuverType) => {
     try {
       if (!selectedSatellite) return;
+
+      const snapshotOffsets = (sat) => ({
+        altitudeOffset: sat?.maneuverOffsets?.altitudeOffset || 0,
+        phaseOffset: sat?.maneuverOffsets?.phaseOffset || 0,
+        inclinationOffset: sat?.maneuverOffsets?.inclinationOffset || 0
+      });
+
+      const isContinuingPlan =
+        plannedManeuver && plannedManeuver.satelliteId === selectedSatellite.id;
       
       // If already planning, stack on preview; otherwise start fresh from current state
-      const baseSatellite = plannedManeuver 
-        ? plannedManeuver.previewSatellite 
+      const baseSatellite = isContinuingPlan
+        ? plannedManeuver.previewSatellite
         : selectedSatellite;
+
+      const baseOffsets = isContinuingPlan
+        ? plannedManeuver.baseOffsets
+        : snapshotOffsets(selectedSatellite);
       
       const updatedSat = applyManeuver(baseSatellite, maneuverType);
       
@@ -157,7 +170,8 @@ export default function SdaDashboard({ sessionCode }) {
       setPlannedManeuver({
         type: maneuverType,
         satelliteId: selectedSatellite.id,
-        previewSatellite: updatedSat
+        previewSatellite: updatedSat,
+        baseOffsets
       });
     } catch (error) {
       console.error('Maneuver planning error:', error);
@@ -192,7 +206,7 @@ export default function SdaDashboard({ sessionCode }) {
       
       addInject({
         type: 'maneuver',
-        message: `${selectedSatellite.name} executing ${plannedManeuver.type.replace('_', ' ')} maneuver`
+        message: `${selectedSatellite?.name || 'Satellite'} executing ${plannedManeuver.type.replace('_', ' ')} maneuver`
       });
       
       // Clear preview AFTER Firebase update completes
@@ -292,6 +306,7 @@ export default function SdaDashboard({ sessionCode }) {
               
               const isExpanded = expandedSatellite === sat.id;
               const position = sat.currentPosition;
+              const displayPosition = position ? applyManeuverOffsets(position, sat.maneuverOffsets) : null;
               
               return (
                 <div key={sat.id}>
@@ -301,7 +316,7 @@ export default function SdaDashboard({ sessionCode }) {
                       setExpandedSatellite(isExpanded ? null : sat.id);
                     }}
                     className={`w-full rounded-lg text-left transition-all border-2 ${
-                      selectedSatellite.id === sat.id
+                      selectedSatellite?.id === sat.id
                         ? 'border-orange-500 bg-slate-800 shadow-lg shadow-orange-500/30'
                         : 'border-slate-700 bg-slate-800/60 hover:bg-slate-800 hover:border-slate-600'
                     }`}
@@ -328,20 +343,20 @@ export default function SdaDashboard({ sessionCode }) {
                   </button>
                   
                   {/* Expanded Position Info */}
-                  {isExpanded && position && (
+                  {isExpanded && displayPosition && (
                     <div className="bg-slate-900/80 border-2 border-slate-700 rounded-lg mt-2 p-3">
                       <div className="space-y-1 text-xs font-mono">
                         <div className="flex justify-between">
                           <span className="text-slate-400">Lat:</span>
-                          <span className="text-white">{position.lat.toFixed(2)}°</span>
+                          <span className="text-white">{displayPosition.lat.toFixed(2)}°</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-400">Lon:</span>
-                          <span className="text-white">{position.lon.toFixed(2)}°</span>
+                          <span className="text-white">{displayPosition.lon.toFixed(2)}°</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-400">Alt:</span>
-                          <span className="text-white">{position.alt.toFixed(0)} km</span>
+                          <span className="text-white">{displayPosition.alt.toFixed(0)} km</span>
                         </div>
                       </div>
                     </div>

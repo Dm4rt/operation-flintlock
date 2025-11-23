@@ -2,6 +2,7 @@ import React, { useRef, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { applyManeuverOffsets } from '../../utils/maneuverLogic';
 
 export default function SatelliteObject({ 
   satellite, 
@@ -94,6 +95,11 @@ export default function SatelliteObject({
     return [x, y, z];
   }, [position, offsets]);
 
+  const telemetryPosition = useMemo(() => {
+    if (!position) return null;
+    return applyManeuverOffsets(position, offsets);
+  }, [position, offsets]);
+
   return (
     <group position={cartesianPosition}>
       <mesh
@@ -132,7 +138,7 @@ export default function SatelliteObject({
       </mesh>
 
       {/* Label for selected or hovered satellite */}
-      {(isSelected || hovered) && position && (
+      {(isSelected || hovered) && telemetryPosition && (
         <Html
           position={[0, size * 3, 0]}
           center
@@ -150,9 +156,9 @@ export default function SatelliteObject({
             <p className="text-white font-bold text-xs whitespace-nowrap">{satellite.name}</p>
             <p className="text-slate-300 text-[10px] whitespace-nowrap">{satellite.mission}</p>
             <div className="text-slate-400 text-[9px] font-mono mt-1 space-y-0.5">
-              <p>Lat: {position.lat.toFixed(2)}°</p>
-              <p>Lon: {position.lon.toFixed(2)}°</p>
-              <p>Alt: {(position.alt).toFixed(0)} km</p>
+              <p>Lat: {telemetryPosition.lat.toFixed(2)}°</p>
+              <p>Lon: {telemetryPosition.lon.toFixed(2)}°</p>
+              <p>Alt: {(telemetryPosition.alt).toFixed(0)} km</p>
             </div>
           </div>
         </Html>

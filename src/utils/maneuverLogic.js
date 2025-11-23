@@ -27,6 +27,10 @@ export const MANEUVER_DESCRIPTIONS = {
   [MANEUVER_TYPES.INCLINATION_CHANGE]: 'Normal burn - changes orbital plane'
 };
 
+const ALTITUDE_DELTA_KM = 500;
+const PHASE_DELTA = 0.2;
+const INCLINATION_DELTA_DEG = 5;
+
 /**
  * Apply maneuver to satellite and return updated state
  * @param {Object} satellite - Current satellite state
@@ -51,19 +55,19 @@ export function applyManeuver(satellite, maneuverType) {
 
   switch (maneuverType) {
     case MANEUVER_TYPES.RAISE_ORBIT:
-      offsets.altitudeOffset += 500; // +500 km (prograde)
+      offsets.altitudeOffset += ALTITUDE_DELTA_KM; // +500 km (prograde)
       break;
     case MANEUVER_TYPES.LOWER_ORBIT:
-      offsets.altitudeOffset -= 500; // -500 km (retrograde)
+      offsets.altitudeOffset -= ALTITUDE_DELTA_KM; // -500 km (retrograde)
       break;
     case MANEUVER_TYPES.PHASE_FORWARD:
-      offsets.phaseOffset += 0.2; // advance phase (radial out)
+      offsets.phaseOffset += PHASE_DELTA; // advance phase (radial out)
       break;
     case MANEUVER_TYPES.PHASE_BACKWARD:
-      offsets.phaseOffset -= 0.2; // retard phase (radial in)
+      offsets.phaseOffset -= PHASE_DELTA; // retard phase (radial in)
       break;
     case MANEUVER_TYPES.INCLINATION_CHANGE:
-      offsets.inclinationOffset += 5; // +5 degrees (normal)
+      offsets.inclinationOffset += INCLINATION_DELTA_DEG; // +5 degrees (normal)
       break;
     default:
       throw new Error('Unknown maneuver type');
