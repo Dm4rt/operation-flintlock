@@ -61,22 +61,16 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
                     {/* Earth */}
                     <Earth />
 
-                    {/* Orbit Paths - Show committed maneuvers, but not if currently previewing */}
-                    {showOrbits && satellites.map(sat => {
-                        // Don't show committed orbit with offsets if we're previewing new maneuvers
-                        const isBeingPreviewed = plannedManeuver && plannedManeuver.satelliteId === sat.id;
-                        const offsetsToUse = isBeingPreviewed ? null : sat.maneuverOffsets;
-                        
-                        return (
-                            <OrbitPath
-                                key={`orbit-${sat.id}-${Date.now()}`}
-                                tle={sat.tle}
-                                satelliteType={sat.type}
-                                isSelected={selectedSatellite?.id === sat.id}
-                                offsets={offsetsToUse}
-                            />
-                        );
-                    })}
+                    {/* Orbit Paths - always reflect committed offsets */}
+                    {showOrbits && satellites.map(sat => (
+                        <OrbitPath
+                            key={`orbit-${sat.id}-${JSON.stringify(sat.maneuverOffsets)}`}
+                            tle={sat.tle}
+                            satelliteType={sat.type}
+                            isSelected={selectedSatellite?.id === sat.id}
+                            offsets={sat.maneuverOffsets}
+                        />
+                    ))}
 
                     {/* Planned Maneuver Orbit Preview */}
                     {showOrbits && plannedManeuver && plannedManeuver.previewSatellite && (
@@ -89,15 +83,11 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
                         />
                     )}
 
-                    {/* Satellites - never show preview offsets, only committed from Firebase */}
+                    {/* Satellites - render committed offsets */}
                     {satellites.map(sat => {
                         const position = satellitePositions[sat.id];
                         if (!position) return null;
 
-                        // Don't apply preview offsets - those are only for the dashed orbit line
-                        // Only apply offsets if this satellite is NOT currently being previewed
-                        const isBeingPreviewed = plannedManeuver && plannedManeuver.satelliteId === sat.id;
-                        
                         return (
                             <SatelliteObject
                                 key={sat.id}
@@ -106,7 +96,7 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
                                 isSelected={selectedSatellite?.id === sat.id}
                                 onSelect={onSelectSatellite}
                                 onHover={setHoveredSatellite}
-                                offsets={isBeingPreviewed ? null : sat.maneuverOffsets}
+                                offsets={sat.maneuverOffsets}
                             />
                         );
                     })}
