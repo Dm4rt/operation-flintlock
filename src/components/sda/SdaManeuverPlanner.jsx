@@ -8,35 +8,47 @@ import {
   getManeuverRecommendation 
 } from '../../utils/maneuverLogic';
 
-export default function SdaManeuverPlanner({ satellite, onManeuver }) {
+export default function SdaManeuverPlanner({ satellite, onPlanManeuver, onCommitManeuver, onCancelManeuver, plannedManeuver }) {
   if (!satellite) return null;
 
   const recommendation = getManeuverRecommendation(satellite);
+  const hasPlannedManeuver = plannedManeuver && plannedManeuver.satelliteId === satellite.id;
 
   const maneuvers = [
     { 
       type: MANEUVER_TYPES.RAISE_ORBIT, 
-      label: 'Raise', 
+      label: 'Prograde', 
       icon: ArrowUp,
-      color: 'blue'
+      color: 'green',
+      symbol: '⊕'
     },
     { 
       type: MANEUVER_TYPES.LOWER_ORBIT, 
-      label: 'Lower', 
+      label: 'Retrograde', 
       icon: ArrowDown,
-      color: 'blue'
+      color: 'green',
+      symbol: '⊖'
+    },
+    { 
+      type: MANEUVER_TYPES.INCLINATION_CHANGE, 
+      label: 'Normal', 
+      icon: ArrowUp,
+      color: 'purple',
+      symbol: '△'
     },
     { 
       type: MANEUVER_TYPES.PHASE_FORWARD, 
-      label: 'Phase+', 
+      label: 'Radial Out', 
       icon: ChevronRight,
-      color: 'purple'
+      color: 'cyan',
+      symbol: '⊙'
     },
     { 
       type: MANEUVER_TYPES.PHASE_BACKWARD, 
-      label: 'Phase-', 
+      label: 'Radial In', 
       icon: ChevronLeft,
-      color: 'purple'
+      color: 'cyan',
+      symbol: '⊗'
     }
   ];
 
@@ -48,7 +60,7 @@ export default function SdaManeuverPlanner({ satellite, onManeuver }) {
       return;
     }
     
-    onManeuver(maneuverType);
+    onPlanManeuver(maneuverType);
   };
 
   const getColorClasses = (color, disabled) => {
@@ -110,6 +122,30 @@ export default function SdaManeuverPlanner({ satellite, onManeuver }) {
         </div>
       )}
 
+      {/* Planned Maneuver Status */}
+      {hasPlannedManeuver && (
+        <div className="bg-blue-900/30 border-2 border-blue-600 rounded-lg p-3">
+          <p className="text-xs text-blue-400 font-bold uppercase mb-1">Maneuvers Planned</p>
+          <div className="space-y-1">
+            {plannedManeuver.previewSatellite.maneuverOffsets && (
+              <>
+                {plannedManeuver.previewSatellite.maneuverOffsets.altitudeOffset !== 0 && (
+                  <p className="text-xs text-white">Altitude: {plannedManeuver.previewSatellite.maneuverOffsets.altitudeOffset > 0 ? '+' : ''}{plannedManeuver.previewSatellite.maneuverOffsets.altitudeOffset} km</p>
+                )}
+                {plannedManeuver.previewSatellite.maneuverOffsets.phaseOffset !== 0 && (
+                  <p className="text-xs text-white">Phase: {plannedManeuver.previewSatellite.maneuverOffsets.phaseOffset > 0 ? '+' : ''}{plannedManeuver.previewSatellite.maneuverOffsets.phaseOffset.toFixed(2)}</p>
+                )}
+                {plannedManeuver.previewSatellite.maneuverOffsets.inclinationOffset !== 0 && (
+                  <p className="text-xs text-white">Inclination: {plannedManeuver.previewSatellite.maneuverOffsets.inclinationOffset > 0 ? '+' : ''}{plannedManeuver.previewSatellite.maneuverOffsets.inclinationOffset}°</p>
+                )}
+              </>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">Preview orbit shown in dashed blue line</p>
+          <p className="text-xs text-green-400 mt-1">Fuel cost: {satellite.fuelPoints - plannedManeuver.previewSatellite.fuelPoints} FP</p>
+        </div>
+      )}
+
       {/* Maneuver Buttons */}
       <div className="space-y-3">
         {maneuvers.map(maneuver => {
@@ -122,7 +158,7 @@ export default function SdaManeuverPlanner({ satellite, onManeuver }) {
               onClick={() => handleManeuverClick(maneuver.type)}
               disabled={!check.canManeuver}
               className={`w-full rounded-lg transition-all border-2 shadow-lg ${
-                !check.canManeuver 
+                !check.canManeuver
                   ? 'bg-slate-800/50 border-slate-700 text-slate-500 cursor-not-allowed'
                   : 'bg-slate-800 border-slate-600 text-white hover:bg-slate-700 hover:border-slate-500 hover:shadow-xl active:scale-95'
               }`}
@@ -134,6 +170,24 @@ export default function SdaManeuverPlanner({ satellite, onManeuver }) {
           );
         })}
       </div>
+
+      {/* Commit/Cancel Buttons */}
+      {hasPlannedManeuver && (
+        <div className="space-y-2 pt-3 border-t border-slate-700">
+          <button
+            onClick={onCommitManeuver}
+            className="w-full rounded-lg bg-green-600 hover:bg-green-500 border-2 border-green-500 text-white font-bold py-3 transition-all hover:shadow-xl active:scale-95"
+          >
+            Commit Maneuver
+          </button>
+          <button
+            onClick={onCancelManeuver}
+            className="w-full rounded-lg bg-red-600 hover:bg-red-500 border-2 border-red-500 text-white font-bold py-3 transition-all hover:shadow-xl active:scale-95"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Maneuver Offsets Display */}
       {satellite.maneuverOffsets && (

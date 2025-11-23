@@ -12,19 +12,19 @@ export const MANEUVER_TYPES = {
 };
 
 export const MANEUVER_COSTS = {
-  [MANEUVER_TYPES.RAISE_ORBIT]: 10,
-  [MANEUVER_TYPES.LOWER_ORBIT]: 10,
-  [MANEUVER_TYPES.PHASE_FORWARD]: 5,
-  [MANEUVER_TYPES.PHASE_BACKWARD]: 5,
-  [MANEUVER_TYPES.INCLINATION_CHANGE]: 15
+  [MANEUVER_TYPES.RAISE_ORBIT]: 3,
+  [MANEUVER_TYPES.LOWER_ORBIT]: 3,
+  [MANEUVER_TYPES.PHASE_FORWARD]: 2,
+  [MANEUVER_TYPES.PHASE_BACKWARD]: 2,
+  [MANEUVER_TYPES.INCLINATION_CHANGE]: 5
 };
 
 export const MANEUVER_DESCRIPTIONS = {
-  [MANEUVER_TYPES.RAISE_ORBIT]: 'Increase altitude - widens ground track',
-  [MANEUVER_TYPES.LOWER_ORBIT]: 'Decrease altitude - tightens ground track',
-  [MANEUVER_TYPES.PHASE_FORWARD]: 'Shift satellite ahead in orbit',
-  [MANEUVER_TYPES.PHASE_BACKWARD]: 'Shift satellite behind in orbit',
-  [MANEUVER_TYPES.INCLINATION_CHANGE]: 'Change orbit tilt by ±5°'
+  [MANEUVER_TYPES.RAISE_ORBIT]: 'Burn prograde - raises apoapsis',
+  [MANEUVER_TYPES.LOWER_ORBIT]: 'Burn retrograde - lowers periapsis',
+  [MANEUVER_TYPES.PHASE_FORWARD]: 'Radial out burn - shifts orbit outward',
+  [MANEUVER_TYPES.PHASE_BACKWARD]: 'Radial in burn - shifts orbit inward',
+  [MANEUVER_TYPES.INCLINATION_CHANGE]: 'Normal burn - changes orbital plane'
 };
 
 /**
@@ -41,27 +41,29 @@ export function applyManeuver(satellite, maneuverType) {
   }
 
   const newSatellite = { ...satellite };
-  const offsets = newSatellite.maneuverOffsets || {
-    altitudeOffset: 0,
-    phaseOffset: 0,
-    inclinationOffset: 0
+  const offsets = {
+    ...(newSatellite.maneuverOffsets || {
+      altitudeOffset: 0,
+      phaseOffset: 0,
+      inclinationOffset: 0
+    })
   };
 
   switch (maneuverType) {
     case MANEUVER_TYPES.RAISE_ORBIT:
-      offsets.altitudeOffset += 250; // +250 km
+      offsets.altitudeOffset += 500; // +500 km (prograde)
       break;
     case MANEUVER_TYPES.LOWER_ORBIT:
-      offsets.altitudeOffset -= 250; // -250 km
+      offsets.altitudeOffset -= 500; // -500 km (retrograde)
       break;
     case MANEUVER_TYPES.PHASE_FORWARD:
-      offsets.phaseOffset += 0.1; // advance phase
+      offsets.phaseOffset += 0.2; // advance phase (radial out)
       break;
     case MANEUVER_TYPES.PHASE_BACKWARD:
-      offsets.phaseOffset -= 0.1; // retard phase
+      offsets.phaseOffset -= 0.2; // retard phase (radial in)
       break;
     case MANEUVER_TYPES.INCLINATION_CHANGE:
-      offsets.inclinationOffset += 5; // +5 degrees
+      offsets.inclinationOffset += 5; // +5 degrees (normal)
       break;
     default:
       throw new Error('Unknown maneuver type');

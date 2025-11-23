@@ -36,7 +36,7 @@ export default function UserDashboard() {
   if (operationStarted) {
     // SDA Team gets the full orbital operations dashboard
     if (teamId === 'sda') {
-      return <SdaDashboard sessionCode={code} timeLeft={timeLeft} />;
+      return <SdaDashboard sessionCode={code} />;
     }
 
     // Other teams get placeholder interface (to be built later)

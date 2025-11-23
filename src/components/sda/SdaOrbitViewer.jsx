@@ -6,7 +6,7 @@ import SatelliteObject from './SatelliteObject';
 import OrbitPath from './OrbitPath';
 import { propagateSatellite } from '../../utils/orbitUtils';
 
-export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelectSatellite, showOrbits }) {
+export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelectSatellite, showOrbits, plannedManeuver }) {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [satellitePositions, setSatellitePositions] = useState({});
     const [hoveredSatellite, setHoveredSatellite] = useState(null);
@@ -61,21 +61,43 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
                     {/* Earth */}
                     <Earth />
 
-                    {/* Orbit Paths */}
-                    {showOrbits && satellites.map(sat => (
-                        <OrbitPath
-                            key={`orbit-${sat.id}`}
-                            tle={sat.tle}
-                            satelliteType={sat.type}
-                            isSelected={selectedSatellite?.id === sat.id}
-                        />
-                    ))}
+                    {/* Orbit Paths - Show committed maneuvers, but not if currently previewing */}
+                    {showOrbits && satellites.map(sat => {
+                        // Don't show committed orbit with offsets if we're previewing new maneuvers
+                        const isBeingPreviewed = plannedManeuver && plannedManeuver.satelliteId === sat.id;
+                        const offsetsToUse = isBeingPreviewed ? null : sat.maneuverOffsets;
+                        
+                        return (
+                            <OrbitPath
+                                key={`orbit-${sat.id}-${Date.now()}`}
+                                tle={sat.tle}
+                                satelliteType={sat.type}
+                                isSelected={selectedSatellite?.id === sat.id}
+                                offsets={offsetsToUse}
+                            />
+                        );
+                    })}
 
-                    {/* Satellites */}
+                    {/* Planned Maneuver Orbit Preview */}
+                    {showOrbits && plannedManeuver && plannedManeuver.previewSatellite && (
+                        <OrbitPath
+                            key={`planned-${Date.now()}`}
+                            tle={selectedSatellite.tle}
+                            satelliteType="planned"
+                            isSelected={false}
+                            offsets={plannedManeuver.previewSatellite.maneuverOffsets}
+                        />
+                    )}
+
+                    {/* Satellites - never show preview offsets, only committed from Firebase */}
                     {satellites.map(sat => {
                         const position = satellitePositions[sat.id];
                         if (!position) return null;
 
+                        // Don't apply preview offsets - those are only for the dashed orbit line
+                        // Only apply offsets if this satellite is NOT currently being previewed
+                        const isBeingPreviewed = plannedManeuver && plannedManeuver.satelliteId === sat.id;
+                        
                         return (
                             <SatelliteObject
                                 key={sat.id}
@@ -84,6 +106,7 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
                                 isSelected={selectedSatellite?.id === sat.id}
                                 onSelect={onSelectSatellite}
                                 onHover={setHoveredSatellite}
+                                offsets={isBeingPreviewed ? null : sat.maneuverOffsets}
                             />
                         );
                     })}
@@ -111,7 +134,7 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
 
             {/* Tracking Indicator */}
             {selectedSatellite && (
-                <div className="absolute top-3 right-3 bg-slate-900/95 rounded-lg px-3 py-2 border border-orange-500 pointer-events-none">
+                <div className="absolute top-3 right-3 bg-slate-900/95 rounded-lg px-3 py-2 border border-orange-500 pointer-events-none z-20">
                     <p className="text-xs text-slate-400 uppercase">Tracking</p>
                     <p className="text-sm font-bold text-orange-400">{selectedSatellite.name}</p>
                     <p className="text-xs text-slate-300">{selectedSatellite.orbitClass}</p>

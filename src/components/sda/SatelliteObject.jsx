@@ -8,7 +8,8 @@ export default function SatelliteObject({
   position, 
   isSelected, 
   onSelect,
-  onHover 
+  onHover,
+  offsets 
 }) {
   const meshRef = useRef();
   const [hovered, setHovered] = useState(false);
@@ -42,25 +43,56 @@ export default function SatelliteObject({
   const cartesianPosition = useMemo(() => {
     if (!position) return [0, 0, 0];
     
+    let x, y, z;
+    
     // If we have ECI coordinates, use them directly
     if (position.eci) {
-      const x = position.eci.x / 1000; // Convert to thousands of km
-      const y = position.eci.z / 1000; // Swap Y and Z for Three.js
-      const z = position.eci.y / 1000;
-      return [x, y, z];
+      x = position.eci.x / 1000; // Convert to thousands of km
+      y = position.eci.z / 1000; // Swap Y and Z for Three.js
+      z = position.eci.y / 1000;
+    } else {
+      // Fallback to lat/lon/alt conversion
+      const lat = position.lat * (Math.PI / 180);
+      const lon = position.lon * (Math.PI / 180);
+      const radius = 6.371 + position.alt / 1000;
+      
+      x = radius * Math.cos(lat) * Math.cos(lon);
+      y = radius * Math.sin(lat);
+      z = radius * Math.cos(lat) * Math.sin(lon);
     }
     
-    // Fallback to lat/lon/alt conversion
-    const lat = position.lat * (Math.PI / 180);
-    const lon = position.lon * (Math.PI / 180);
-    const radius = 6.371 + position.alt / 1000;
-    
-    const x = radius * Math.cos(lat) * Math.cos(lon);
-    const y = radius * Math.sin(lat);
-    const z = radius * Math.cos(lat) * Math.sin(lon);
+    // Apply maneuver offsets to satellite position
+    if (offsets && (offsets.altitudeOffset !== 0 || offsets.phaseOffset !== 0 || offsets.inclinationOffset !== 0)) {
+      // Altitude changes - scale distance from center
+      if (offsets.altitudeOffset !== 0) {
+        const distance = Math.sqrt(x*x + y*y + z*z);
+        const scale = 1 + (offsets.altitudeOffset / 6371);
+        x *= scale;
+        y *= scale;
+        z *= scale;
+      }
+      
+      // Phase offset - rotate around Y axis
+      if (offsets.phaseOffset !== 0) {
+        const angle = offsets.phaseOffset * Math.PI;
+        const newX = x * Math.cos(angle) - z * Math.sin(angle);
+        const newZ = x * Math.sin(angle) + z * Math.cos(angle);
+        x = newX;
+        z = newZ;
+      }
+      
+      // Inclination - tilt around X axis
+      if (offsets.inclinationOffset !== 0) {
+        const tilt = (offsets.inclinationOffset * Math.PI) / 180;
+        const newY = y * Math.cos(tilt) - z * Math.sin(tilt);
+        const newZ = y * Math.sin(tilt) + z * Math.cos(tilt);
+        y = newY;
+        z = newZ;
+      }
+    }
     
     return [x, y, z];
-  }, [position]);
+  }, [position, offsets]);
 
   return (
     <group position={cartesianPosition}>
