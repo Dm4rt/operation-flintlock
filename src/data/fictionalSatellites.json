@@ -41,19 +41,19 @@
   },
   {
     "id": "sbirs-geo-6",
-    "name": "SBIRS GEO-6",
+    "name": "SBIRS HEO-6",
     "type": "missile_warning",
     "mission": "Missile Warning / ASAT Detection",
-    "orbitClass": "GEO",
-    "description": "IR surveillance satellite - detects ASAT launches & missile threats",
+    "orbitClass": "HEO",
+    "description": "IR surveillance satellite in Molniya-type HEO - provides persistent Northern Hemisphere coverage for missile detection",
     "tle": {
-      "line1": "1 53053U 22095A   23365.50000000  .00000000  00000-0  00000+0 0  9990",
-      "line2": "2 53053   0.0124  90.4521 0001892 135.2145 224.9015  1.00271932  9999"
+      "line1": "1 53053U 22095A   23365.50000000 -.00000011  00000-0  00000+0 0  9990",
+      "line2": "2 53053  63.4000 270.0000 7200000 280.0000  10.0000  2.00569000 99999"
     },
     "fuelPoints": 100,
     "status": {
       "health": "nominal",
-      "asatRisk": "low",
+      "asatRisk": "medium",
       "coverage": true,
       "jammed": false
     },

@@ -36,7 +36,7 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
         <div className="w-full h-full relative bg-[#0a1125]">
             <Canvas
                 camera={{ position: [0, 0, 30], fov: 50 }}
-                style={{ background: '#0a1125' }}
+                style={{ width: '100%', height: '100%', background: '#0a1125' }}
             >
                 <Suspense fallback={null}>
                     {/* Lighting */}

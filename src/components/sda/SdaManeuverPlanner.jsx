@@ -16,33 +16,27 @@ export default function SdaManeuverPlanner({ satellite, onManeuver }) {
   const maneuvers = [
     { 
       type: MANEUVER_TYPES.RAISE_ORBIT, 
-      label: 'Raise Orbit', 
+      label: 'Raise', 
       icon: ArrowUp,
       color: 'blue'
     },
     { 
       type: MANEUVER_TYPES.LOWER_ORBIT, 
-      label: 'Lower Orbit', 
+      label: 'Lower', 
       icon: ArrowDown,
       color: 'blue'
     },
     { 
       type: MANEUVER_TYPES.PHASE_FORWARD, 
-      label: 'Phase Forward', 
+      label: 'Phase+', 
       icon: ChevronRight,
       color: 'purple'
     },
     { 
       type: MANEUVER_TYPES.PHASE_BACKWARD, 
-      label: 'Phase Backward', 
+      label: 'Phase-', 
       icon: ChevronLeft,
       color: 'purple'
-    },
-    { 
-      type: MANEUVER_TYPES.INCLINATION_CHANGE, 
-      label: 'Inclination Change', 
-      icon: RotateCcw,
-      color: 'orange'
     }
   ];
 
@@ -72,19 +66,12 @@ export default function SdaManeuverPlanner({ satellite, onManeuver }) {
   };
 
   return (
-    <div className="bg-gradient-to-br from-slate-900 to-slate-950 rounded-lg border-2 border-slate-700 shadow-xl overflow-hidden">
+    <div className="bg-slate-900/60 rounded-lg border-2 border-slate-700 overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-900/30 to-blue-800/20 border-b border-blue-700/50 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-white flex items-center gap-2">
-            <span className="text-blue-400">⚡</span> Maneuver Control
-          </h3>
-          <div className="bg-slate-900/60 px-3 py-1 rounded-full border border-slate-700">
-            <p className="text-xs text-slate-300 font-mono">
-              <span className="text-green-400 font-bold">{satellite.fuelPoints}</span> FP
-            </p>
-          </div>
-        </div>
+      <div className="bg-slate-800/80 border-b border-slate-700 px-4 py-3">
+        <h3 className="text-base font-bold text-white text-center">
+          Maneuver Planner
+        </h3>
       </div>
 
       <div className="p-4 space-y-3">
@@ -124,11 +111,10 @@ export default function SdaManeuverPlanner({ satellite, onManeuver }) {
       )}
 
       {/* Maneuver Buttons */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         {maneuvers.map(maneuver => {
           const check = canPerformManeuver(satellite, maneuver.type);
           const cost = MANEUVER_COSTS[maneuver.type];
-          const description = MANEUVER_DESCRIPTIONS[maneuver.type];
           
           return (
             <button
@@ -137,27 +123,12 @@ export default function SdaManeuverPlanner({ satellite, onManeuver }) {
               disabled={!check.canManeuver}
               className={`w-full rounded-lg transition-all border-2 shadow-lg ${
                 !check.canManeuver 
-                  ? 'bg-slate-800/50 border-slate-700 text-slate-600 cursor-not-allowed'
-                  : maneuver.color === 'green'
-                  ? 'bg-gradient-to-br from-green-600 to-green-700 border-green-500 text-white hover:from-green-500 hover:to-green-600 hover:border-green-400 hover:shadow-green-500/50 active:scale-95'
-                  : maneuver.color === 'yellow'
-                  ? 'bg-gradient-to-br from-yellow-600 to-yellow-700 border-yellow-500 text-white hover:from-yellow-500 hover:to-yellow-600 hover:border-yellow-400 hover:shadow-yellow-500/50 active:scale-95'
-                  : 'bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500 text-white hover:from-blue-500 hover:to-blue-600 hover:border-blue-400 hover:shadow-blue-500/50 active:scale-95'
+                  ? 'bg-slate-800/50 border-slate-700 text-slate-500 cursor-not-allowed'
+                  : 'bg-slate-800 border-slate-600 text-white hover:bg-slate-700 hover:border-slate-500 hover:shadow-xl active:scale-95'
               }`}
             >
-              <div className="p-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                    <maneuver.icon className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="text-base font-bold">{maneuver.label}</p>
-                  </div>
-                  <div className="bg-black/30 px-3 py-1 rounded-full text-sm font-bold backdrop-blur-sm">
-                    -{cost} FP
-                  </div>
-                </div>
-                <p className="text-xs opacity-90 text-left">{description}</p>
+              <div className="px-6 py-4">
+                <p className="text-lg font-bold">{maneuver.label}</p>
               </div>
             </button>
           );

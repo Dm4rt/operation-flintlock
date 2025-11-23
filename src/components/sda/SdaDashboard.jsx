@@ -92,90 +92,77 @@ export default function SdaDashboard({ sessionCode, timeLeft }) {
       </div>
 
       {/* Main Content Grid */}
-      <div className="flex-1 flex gap-0 min-h-0">
-        {/* Left Panel - Tracked Assets & Details */}
-        <div className="w-72 flex-shrink-0 flex flex-col gap-4 overflow-y-auto bg-slate-900/40 border-r border-slate-800 p-4">
-          {/* Satellite Selector */}
-          <div>
-            <h3 className="text-sm font-bold text-white mb-3 uppercase tracking-wide flex items-center gap-2">
-              <span className="text-orange-400">▣</span> Tracked Assets
+      <div className="flex-1 flex gap-0 min-h-0 overflow-hidden">
+        {/* Left Panel - Tracked Assets */}
+        <div className="w-80 flex-shrink-0 flex flex-col gap-4 bg-slate-900/40 border-r border-slate-800 p-4 z-10">
+          {/* Header */}
+          <div className="bg-slate-800/80 rounded-lg border-2 border-slate-700 px-4 py-3">
+            <h3 className="text-base font-bold text-white text-center">
+              Tracked Assets
             </h3>
-            <div className="space-y-3">
-              {satellites.map(sat => {
-                // Get image based on satellite
-                const getImage = (id) => {
-                  switch(id) {
-                    case 'aehf-6': return aehfImage;
-                    case 'gps-iii-5': return gpsImage;
-                    case 'sbirs-geo-6': return sbirsImage;
-                    case 'sentinel-7': return isrImage;
-                    default: return null;
-                  }
-                };
-                
-                return (
-                  <button
-                    key={sat.id}
-                    onClick={() => setSelectedSatellite(sat)}
-                    className={`w-full rounded-lg text-left transition-all overflow-hidden border-2 ${
-                      selectedSatellite.id === sat.id
-                        ? 'border-orange-500 bg-gradient-to-br from-slate-800 to-slate-900 shadow-lg shadow-orange-500/30'
-                        : 'border-slate-700 bg-slate-800/50 hover:bg-slate-800 hover:border-slate-600'
-                    }`}
-                  >
-                    <div className="p-3">
-                      <div className="flex items-start gap-3 mb-2">
-                        <div className="w-20 h-20 flex-shrink-0 rounded-md overflow-hidden bg-slate-950 border-2 border-slate-700">
-                          <img 
-                            src={getImage(sat.id)} 
-                            alt={sat.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm text-white mb-1">{sat.name}</p>
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1.5">
-                              <div className={`w-1.5 h-1.5 rounded-full ${
-                                sat.status.health === 'nominal' ? 'bg-green-400 animate-pulse' : 'bg-red-400'
-                              }`}></div>
-                              <span className="text-xs text-slate-400">
-                                {sat.status.health === 'nominal' ? 'Nominal' : 'Degraded'}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-500">{sat.orbitClass}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-500">Mission</span>
-                          <span className="text-xs text-slate-300">{sat.mission.split(' ').slice(0, 2).join(' ')}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-500">Fuel</span>
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full transition-all ${
-                                  sat.fuelPoints > 50 ? 'bg-green-400' : sat.fuelPoints > 25 ? 'bg-yellow-400' : 'bg-red-400'
-                                }`}
-                                style={{ width: `${sat.fuelPoints}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-xs text-slate-300 font-mono">{sat.fuelPoints}%</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
-          {/* Satellite Detail Panel (bottom of left column) */}
-          <div className="mt-4">
+          {/* Satellite List */}
+          <div className="flex-1 overflow-y-auto space-y-3">
+            {satellites.map(sat => {
+              // Get image based on satellite
+              const getImage = (id) => {
+                switch(id) {
+                  case 'aehf-6': return aehfImage;
+                  case 'gps-iii-5': return gpsImage;
+                  case 'sbirs-geo-6': return sbirsImage;
+                  case 'sentinel-7': return isrImage;
+                  default: return null;
+                }
+              };
+              
+              // Get color dot based on type
+              const getTypeColor = (type) => {
+                switch(type) {
+                  case 'comms': return 'bg-cyan-400';
+                  case 'navigation': return 'bg-green-400';
+                  case 'missile_warning': return 'bg-red-400';
+                  case 'isr': return 'bg-yellow-400';
+                  default: return 'bg-white';
+                }
+              };
+              
+              return (
+                <button
+                  key={sat.id}
+                  onClick={() => setSelectedSatellite(sat)}
+                  className={`w-full rounded-lg text-left transition-all border-2 ${
+                    selectedSatellite.id === sat.id
+                      ? 'border-orange-500 bg-slate-800 shadow-lg shadow-orange-500/30'
+                      : 'border-slate-700 bg-slate-800/60 hover:bg-slate-800 hover:border-slate-600'
+                  }`}
+                >
+                  <div className="p-3 flex items-center gap-3">
+                    {/* Satellite Image */}
+                    <div className="w-16 h-16 flex-shrink-0 rounded-md overflow-hidden bg-slate-950 border-2 border-slate-700">
+                      <img 
+                        src={getImage(sat.id)} 
+                        alt={sat.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    
+                    {/* Satellite Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={`w-2.5 h-2.5 rounded-full ${getTypeColor(sat.type)}`}></div>
+                        <p className="font-bold text-sm text-white truncate">{sat.name}</p>
+                      </div>
+                      <p className="text-xs text-slate-400">{sat.orbitClass}</p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Satellite Details Panel */}
+          <div className="border-t border-slate-700 pt-4">
             <SdaSatellitePanel satellite={selectedSatellite} />
           </div>
 
@@ -202,7 +189,7 @@ export default function SdaDashboard({ sessionCode, timeLeft }) {
         </div>
 
         {/* Center - 3D Orbit Viewer */}
-        <div className="flex-1 bg-slate-950 relative">
+        <div className="flex-1 bg-slate-950 relative z-0">
           <SdaOrbitViewer 
             satellites={satellites} 
             selectedSatellite={selectedSatellite}
@@ -212,7 +199,7 @@ export default function SdaDashboard({ sessionCode, timeLeft }) {
         </div>
 
         {/* Right Panel - Maneuver Planner & Event Feed */}
-        <div className="w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto bg-slate-900/40 border-l border-slate-800 p-4">
+        <div className="w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto bg-slate-900/40 border-l border-slate-800 p-4 z-10">
           {/* Maneuver Planner */}
           <div>
             <SdaManeuverPlanner 
