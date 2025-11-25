@@ -19,7 +19,7 @@ const gaussian = () => {
 };
 
 const createSignal = (overrides = {}) => ({
-  id: `sig-${safeCrypto?.randomUUID ? safeCrypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`}`,
+  id: overrides.id || `sig-${safeCrypto?.randomUUID ? safeCrypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`}`,
   freq: DEFAULT_CENTER_FREQ,
   power: -50,
   width: 250_000,
@@ -41,6 +41,8 @@ export default class FakeRFEngine {
     this.frameCallbacks = new Set();
     this.driftPhase = Math.random() * Math.PI * 2;
     this.warpPhase = Math.random() * Math.PI * 2;
+    this.autoBootstrapped = false;
+    this.lastPublishedState = null;
   }
 
   async initializeDoc() {
@@ -51,7 +53,6 @@ export default class FakeRFEngine {
         noiseFloor: this.noiseFloor,
         signals: this.signals,
         jamming: this.jamming,
-        fftData: new Array(FFT_SIZE / 2).fill(this.noiseFloor),
         updatedAt: new Date().toISOString()
       }, { merge: true });
     } catch (error) {
@@ -65,7 +66,7 @@ export default class FakeRFEngine {
     this.initializeDoc();
     this.intervalId = setInterval(() => {
       const payload = this.generateFrame();
-      this.publishFrame(payload);
+      this.publishFrameIfChanged(payload);
       this.frameCallbacks.forEach(cb => cb(payload));
     }, FRAME_INTERVAL_MS);
   }
@@ -100,6 +101,17 @@ export default class FakeRFEngine {
     return signal;
   }
 
+  setSignals(configs = []) {
+    this.signals = configs.map(createSignal);
+  }
+
+  ensureSignals(configs = []) {
+    if (this.autoBootstrapped) return;
+    if (!configs.length) return;
+    this.signals = configs.map(createSignal);
+    this.autoBootstrapped = true;
+  }
+
   removeSignal(id) {
     this.signals = this.signals.filter(signal => signal.id !== id);
   }
@@ -118,39 +130,9 @@ export default class FakeRFEngine {
   }
 
   generateFrame() {
-    this.driftPhase = (this.driftPhase + 0.012) % (Math.PI * 2);
-    this.warpPhase = (this.warpPhase + 0.02) % (Math.PI * 2);
-
-    const baseFreq = this.centerFreq - this.span / 2;
-    const binCount = FFT_SIZE / 2;
-    const binWidth = this.span / binCount;
-
-    const spectrum = Array.from({ length: binCount }, (_, index) => {
-      const binFreq = baseFreq + index * binWidth;
-      const harmonic = Math.sin(((binFreq - this.centerFreq) / this.span) * Math.PI * 4 + this.driftPhase) * 6;
-      const absoluteTexture = Math.sin(binFreq * 0.0000004 + this.warpPhase) * 7;
-      const layeredTexture = Math.sin(binFreq * 0.0000009 + this.driftPhase * 0.5) * 4;
-      let db = this.noiseFloor + harmonic + absoluteTexture + layeredTexture + gaussian() * 2;
-
-      this.signals.forEach(signal => {
-        const distance = Math.abs(binFreq - signal.freq);
-        const width = Math.max(signal.width, this.span * 0.01);
-        const influence = Math.exp(-(distance * distance) / (2 * width * width));
-        db = Math.max(db, signal.power * influence);
-      });
-
-      if (this.jamming) {
-        const distance = Math.abs(binFreq - this.jamming.freq);
-        if (distance < this.jamming.width) {
-          db = Math.max(db, -25 + gaussian() * 8);
-        }
-      }
-
-      return Math.max(-140, Math.min(-5, db));
-    });
-
+    // Only return signal metadata - no FFT generation
+    // FFT visualization now comes from real audio in AudioEngine
     return {
-      fftData: spectrum,
       signals: this.signals,
       centerFreq: this.centerFreq,
       span: this.span,
@@ -160,11 +142,37 @@ export default class FakeRFEngine {
     };
   }
 
-  async publishFrame(frame) {
+  publishFrameIfChanged(frame) {
+    const controlState = frame;
+    
+    // Compare with last published state
+    if (this.lastPublishedState) {
+      const changed = 
+        this.lastPublishedState.centerFreq !== controlState.centerFreq ||
+        this.lastPublishedState.span !== controlState.span ||
+        this.lastPublishedState.noiseFloor !== controlState.noiseFloor ||
+        JSON.stringify(this.lastPublishedState.signals) !== JSON.stringify(controlState.signals) ||
+        JSON.stringify(this.lastPublishedState.jamming) !== JSON.stringify(controlState.jamming);
+      
+      if (!changed) return;
+    }
+
+    this.lastPublishedState = controlState;
+    this.publishFrame(controlState);
+  }
+
+  async publishFrame(controlState) {
     try {
-      await setDoc(this.docRef, frame, { merge: true });
+      await setDoc(this.docRef, { ...controlState, updatedAt: new Date().toISOString() }, { merge: true });
     } catch (error) {
       console.error('FakeRFEngine publish error:', error);
     }
+  }
+
+  forceSync() {
+    const frame = this.generateFrame();
+    this.lastPublishedState = frame;
+    this.publishFrame(frame);
+    this.frameCallbacks.forEach(cb => cb(frame));
   }
 }

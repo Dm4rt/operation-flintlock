@@ -4,6 +4,7 @@ import { TEAMS } from "../utils/constants";
 import useSession from "../hooks/useSession";
 import useCountdown from "../hooks/useCountdown";
 import SdaDashboard from "../components/sda/SdaDashboard";
+import SdrAdminPanel from "../components/sdr/SdrAdminPanel";
 
 export default function UserDashboard() {
   const { teamId, code } = useParams();
@@ -12,16 +13,29 @@ export default function UserDashboard() {
   const { session, join } = useSession(code);
 
   useEffect(() => {
-    if (!code || !teamId) return;
+    if (!code || !teamId || !team) return;
+    if (!session) {
+      console.log(`⏳ Waiting for session ${code} to load before joining...`);
+      return;
+    }
     // attempt to join the session's participants list
     (async () => {
       try {
         await join(teamId, { name: team.name });
+        console.log(`✅ Joined session ${code} as ${team.name} (${teamId})`);
       } catch (e) {
-        console.warn('Failed to join session:', e.message);
+        console.error('❌ Failed to join session:', e);
       }
     })();
-  }, [code, teamId]);
+  }, [code, teamId, team, session, join]);
+
+  if (!team) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-white">
+        <p className="text-lg">Team not found</p>
+      </div>
+    );
+  }
 
   // live countdown from session
   const { timeLeft, isRunning } = useCountdown(code);
@@ -37,6 +51,10 @@ export default function UserDashboard() {
     // SDA Team gets the full orbital operations dashboard
     if (teamId === 'sda') {
       return <SdaDashboard sessionCode={code} />;
+    }
+
+    if (teamId === 'ew') {
+      return <SdrAdminPanel operationId={code} />;
     }
 
     // Other teams get placeholder interface (to be built later)

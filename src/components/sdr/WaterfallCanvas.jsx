@@ -11,7 +11,7 @@ const mapToColor = (value, min, max) => {
 
 const ROW_HEIGHT = 3;
 
-export default function WaterfallCanvas({ fftData = [], minDb = -130, maxDb = -20 }) {
+export default function WaterfallCanvas({ fftData = [], minDb = -130, maxDb = -20, height = 320 }) {
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
   const rowsRef = useRef([]);
@@ -69,7 +69,10 @@ export default function WaterfallCanvas({ fftData = [], minDb = -130, maxDb = -2
   }, [fftData, minDb, maxDb]);
 
   return (
-    <div className="relative w-full h-44 rounded-lg border border-slate-900 bg-[#02050b] overflow-hidden shadow-inner shadow-black/40">
+    <div
+      className="relative w-full rounded-lg border border-slate-900 bg-[#02050b] overflow-hidden shadow-inner shadow-black/40"
+      style={{ height }}
+    >
       <canvas ref={canvasRef} className="w-full h-full" />
       <div className="absolute inset-x-4 top-2 text-[10px] uppercase tracking-widest text-slate-500 pointer-events-none">
         Waterfall Persistence

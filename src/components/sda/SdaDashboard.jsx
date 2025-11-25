@@ -13,9 +13,11 @@ import isrImage from './assets/ISR.jpg';
 import { db } from '../../services/firebase';
 import { collection, doc, onSnapshot, setDoc, updateDoc, getDocs } from 'firebase/firestore';
 import useCountdown from '../../hooks/useCountdown';
+import useSession from '../../hooks/useSession';
 
 export default function SdaDashboard({ sessionCode }) {
   const { timeLeft } = useCountdown(sessionCode);
+  const { join } = useSession(sessionCode);
   const [satellites, setSatellites] = useState([]);
   const [selectedSatellite, setSelectedSatellite] = useState(null);
   const [showOrbits, setShowOrbits] = useState(false);
@@ -29,6 +31,19 @@ export default function SdaDashboard({ sessionCode }) {
       message: 'SDA System Online - 4 satellites tracked'
     }
   ]);
+
+  // Register team presence
+  useEffect(() => {
+    if (!sessionCode) return;
+    (async () => {
+      try {
+        await join('sda', { name: 'Space Ops - SDA' });
+        console.log('✅ SDA team registered in participants');
+      } catch (error) {
+        console.error('❌ Failed to register SDA team:', error);
+      }
+    })();
+  }, [sessionCode, join]);
 
   // Initialize satellites in Firebase on first load
   useEffect(() => {

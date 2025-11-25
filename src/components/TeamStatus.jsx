@@ -8,6 +8,12 @@ export default function TeamStatus({ sessionId }) {
 
     const onlineSet = new Set(participants.map(p => p.teamId));
 
+    // Debug log
+    React.useEffect(() => {
+        console.log('TeamStatus participants:', participants);
+        console.log('TeamStatus onlineSet:', Array.from(onlineSet));
+    }, [participants, onlineSet]);
+
     return (
         <div className="bg-slate-950 rounded-xl border border-slate-800 p-6">
             <div className="flex items-center justify-between mb-4">
@@ -29,7 +35,7 @@ export default function TeamStatus({ sessionId }) {
                                 <team.icon className={`w-4 h-4 ${team.color}`} />
                                 <span className={`text-sm ${online ? 'text-slate-200' : 'text-slate-400'}`}>{team.name}</span>
                             </div>
-                            <span className="text-xs font-mono text-slate-600">{online ? 'ONLINE' : 'OFFLINE'}</span>
+                            <span className={`text-xs font-mono ${online ? 'text-emerald-400' : 'text-slate-600'}`}>{online ? 'ONLINE' : 'OFFLINE'}</span>
                         </div>
                     );
                 })}

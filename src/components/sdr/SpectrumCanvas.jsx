@@ -12,7 +12,11 @@ export default function SpectrumCanvas({
   centerFreq,
   span,
   onChangeCenterFreq = () => {},
-  onChangeSpan = () => {}
+  onChangeSpan = () => {},
+  height = 220,
+  noiseFloor = -110,
+  minDb: minDbProp,
+  maxDb: maxDbProp
 }) {
   const canvasRef = useRef(null);
 
@@ -45,8 +49,8 @@ export default function SpectrumCanvas({
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
 
-        ctx.strokeStyle = 'rgba(59, 130, 246, 0.25)';
-        ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.25)';
+      ctx.lineWidth = 1;
       ctx.beginPath();
       for (let i = 0; i <= 5; i++) {
         const y = (height / 5) * i;
@@ -56,14 +60,19 @@ export default function SpectrumCanvas({
       ctx.stroke();
 
       if (!fftData.length) return;
-      const minDb = -130;
-      const maxDb = -30;
-      const normalize = (value) => (value - minDb) / (maxDb - minDb);
+      const computedMin = minDbProp ?? Math.min(noiseFloor - 25, ...fftData, -140);
+      const computedMax = maxDbProp ?? Math.max(noiseFloor + 35, ...fftData, -5);
+      const minDb = Math.min(computedMin, computedMax - 5);
+      const maxDb = Math.max(computedMax, minDb + 5);
+      const normalize = (value) => {
+        const ratio = (value - minDb) / (maxDb - minDb);
+        return Math.min(1, Math.max(0, ratio));
+      };
 
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#60a5fa';
-        ctx.shadowColor = '#1d4ed8';
-        ctx.shadowBlur = 8;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#60a5fa';
+      ctx.shadowColor = '#1d4ed8';
+      ctx.shadowBlur = 8;
       ctx.beginPath();
       fftData.forEach((value, index) => {
         const x = (index / (fftData.length - 1)) * width;
@@ -87,7 +96,7 @@ export default function SpectrumCanvas({
     draw();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [fftData, centerFreq, span]);
+  }, [fftData, centerFreq, span, noiseFloor, minDbProp, maxDbProp]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -116,7 +125,10 @@ export default function SpectrumCanvas({
   }, [centerFreq, span, onChangeCenterFreq, onChangeSpan]);
 
   return (
-    <div className="relative w-full h-56 rounded-lg border border-slate-900 bg-[#03060d] overflow-hidden shadow-inner shadow-black/40">
+    <div
+      className="relative w-full rounded-lg border border-slate-900 bg-[#03060d] overflow-hidden shadow-inner shadow-black/40"
+      style={{ height }}
+    >
       <canvas ref={canvasRef} className="w-full h-full" />
       <div className="absolute inset-x-6 bottom-3 flex items-center justify-between text-[10px] font-mono text-slate-400 pointer-events-none">
         <span>Scroll: Zoom span</span>
