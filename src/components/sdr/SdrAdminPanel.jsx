@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import SpectrumCanvas from './SpectrumCanvas';
 import WaterfallCanvas from './WaterfallCanvas';
 import FakeRFEngine, { DEFAULT_CENTER_FREQ, DEFAULT_SPAN, DEFAULT_NOISE_FLOOR } from '../../engine/FakeRFEngine';
+import AudioEngine from '../../audio/AudioEngine';
+import audioTransmissions from '../../data/audioTransmissions.json';
 import { db } from '../../services/firebase';
 import useCountdown from '../../hooks/useCountdown';
 import useSession from '../../hooks/useSession';
@@ -24,7 +26,31 @@ export default function SdrAdminPanel({ operationId }) {
   const [isJamming, setIsJamming] = useState(false);
   const engineRef = useRef(null);
   const lastUpdateRef = useRef(0);
+  const audioRef = useRef(null);
   const operationStarted = session?.operationStarted;
+  const transmissionMap = useMemo(() => {
+    const map = new Map();
+    audioTransmissions.forEach((entry) => map.set(entry.id, entry));
+    return map;
+  }, []);
+
+  useEffect(() => {
+    const engine = new AudioEngine();
+    audioRef.current = engine;
+    let cancelled = false;
+
+    (async () => {
+      await engine.init();
+      await engine.loadCatalog(audioTransmissions);
+      if (cancelled) return;
+    })();
+
+    return () => {
+      cancelled = true;
+      engine.stopAll();
+      audioRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!operationId || !operationStarted) return;
@@ -35,7 +61,18 @@ export default function SdrAdminPanel({ operationId }) {
     const offload = engine.onFrame((frame) => {
       const timestamp = Date.parse(frame.updatedAt) || Date.now();
       lastUpdateRef.current = timestamp;
-      setSdrState((prev) => ({ ...(prev || {}), ...frame }));
+      setSdrState(prev => {
+        const mergedState = { ...(prev || {}), ...frame };
+        if (audioRef.current) {
+          audioRef.current.updateState({
+            centerFreq: mergedState.centerFreq,
+            span: mergedState.span,
+            signals: mergedState.signals,
+            jamming: mergedState.jamming
+          });
+        }
+        return mergedState;
+      });
       setIsJamming(Boolean(frame.jamming));
       setLoading(false);
     });
@@ -71,6 +108,12 @@ export default function SdrAdminPanel({ operationId }) {
         lastUpdateRef.current = timestamp;
         setSdrState(data);
         setIsJamming(Boolean(data?.jamming));
+        audioRef.current?.updateState({
+          centerFreq: data.centerFreq,
+          span: data.span,
+          signals: data.signals,
+          jamming: data.jamming
+        });
         setLoading(false);
       }
     });
@@ -83,6 +126,7 @@ export default function SdrAdminPanel({ operationId }) {
   const noiseFloor = sdrState?.noiseFloor ?? DEFAULT_NOISE_FLOOR;
   const fftData = sdrState?.fftData ?? [];
   const signals = sdrState?.signals ?? [];
+  const broadcastSignals = signals.filter((signal) => signal.type === 'broadcast');
 
   const handleCenterFreq = (value) => {
     engineRef.current?.setCenterFreq(value);
@@ -99,14 +143,18 @@ export default function SdrAdminPanel({ operationId }) {
     setSdrState((prev) => ({ ...(prev || {}), noiseFloor: value }));
   };
 
-  const addMissionBeacon = () => {
+  const addBroadcastSignal = (audioId) => {
     const engine = engineRef.current;
     if (!engine) return;
+    const profile = transmissionMap.get(audioId);
+    if (!profile) return;
+
     engine.addSignal({
-      type: 'beacon',
-      freq: centerFreq + span * 0.08,
-      power: -25,
-      width: span * 0.05
+      type: 'broadcast',
+      freq: profile.frequencyHz ?? centerFreq + (profile.offsetHz || span * 0.08),
+      power: profile.defaultPower ?? -25,
+      width: profile.widthHz ?? span * 0.05,
+      audioId: profile.id
     });
   };
 
@@ -265,29 +313,43 @@ export default function SdrAdminPanel({ operationId }) {
 
             <div className="bg-[#090d17] border border-slate-800 rounded-lg p-4 shadow-inner shadow-black/40">
               <p className="text-[11px] uppercase text-slate-500 mb-3">Signal Inject</p>
-              <div className="space-y-2">
-                <button
-                  onClick={addMissionBeacon}
-                  className="w-full py-2.5 rounded border border-emerald-400/60 text-emerald-200 text-sm font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 transition"
-                >
-                  Mission Beacon
-                </button>
-                <button
-                  onClick={addEnemySignal}
-                  className="w-full py-2.5 rounded border border-orange-400/60 text-orange-200 text-sm font-semibold bg-orange-500/10 hover:bg-orange-500/20 transition"
-                >
-                  Enemy Transmission
-                </button>
-                <button
-                  onClick={toggleJamming}
-                  className={`w-full py-2.5 rounded border text-sm font-semibold transition ${
-                    isJamming
-                      ? 'border-red-500/60 text-red-200 bg-red-600/20'
-                      : 'border-red-500/40 text-red-200 bg-red-500/10 hover:bg-red-500/20'
-                  }`}
-                >
-                  {isJamming ? 'Stop Jamming' : 'Start Jamming'}
-                </button>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-400 mb-2">Broadcast Inject</p>
+                  <div className="space-y-2">
+                    {audioTransmissions.map((profile) => (
+                      <button
+                        key={profile.id}
+                        onClick={() => addBroadcastSignal(profile.id)}
+                        className="w-full py-2.5 rounded border border-emerald-400/60 text-emerald-200 text-sm font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 transition flex items-center justify-between"
+                      >
+                        <span>{profile.name}</span>
+                        <span className="font-mono text-[11px] text-emerald-200">{formatFrequency(profile.frequencyHz ?? centerFreq)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-800">
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-orange-400 mb-2">Other Injects</p>
+                  <div className="space-y-2">
+                    <button
+                      onClick={addEnemySignal}
+                      className="w-full py-2.5 rounded border border-orange-400/60 text-orange-200 text-sm font-semibold bg-orange-500/10 hover:bg-orange-500/20 transition"
+                    >
+                      Enemy Transmission
+                    </button>
+                    <button
+                      onClick={toggleJamming}
+                      className={`w-full py-2.5 rounded border text-sm font-semibold transition ${
+                        isJamming
+                          ? 'border-red-500/60 text-red-200 bg-red-600/20'
+                          : 'border-red-500/40 text-red-200 bg-red-500/10 hover:bg-red-500/20'
+                      }`}
+                    >
+                      {isJamming ? 'Stop Jamming' : 'Start Jamming'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -298,6 +360,31 @@ export default function SdrAdminPanel({ operationId }) {
           </aside>
 
           <main className="flex-1 bg-[#04060c] p-6 flex flex-col gap-4">
+            <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl shadow-black/50 p-4">
+              <div className="flex items-center justify-between text-xs text-slate-400 mb-3">
+                <span className="font-semibold text-slate-200 uppercase tracking-[0.3em] text-[10px]">Broadcast Hud</span>
+                <span className="font-mono text-blue-200 text-sm">{broadcastSignals.length ? 'ACTIVE' : 'IDLE'}</span>
+              </div>
+              {broadcastSignals.length === 0 ? (
+                <p className="text-slate-500 text-sm">No broadcast signals injected. Use the Broadcast Inject controls to queue one.</p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {broadcastSignals.map((signal) => {
+                    const profile = signal.audioId ? transmissionMap.get(signal.audioId) : null;
+                    return (
+                      <div key={signal.id} className="bg-[#070b16] border border-slate-800 rounded-lg px-3 py-3">
+                        <p className="text-white text-sm font-semibold">{profile?.name || 'Broadcast Signal'}</p>
+                        <p className="font-mono text-lg text-blue-200 tracking-widest">{formatFrequency(signal.freq)}</p>
+                        <p className="text-[11px] text-slate-400">Dial exactly to hear audio</p>
+                        {profile?.notes && (
+                          <p className="text-[11px] text-slate-500 mt-1">{profile.notes}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl shadow-black/50 p-4 flex flex-col gap-3">
               <div className="flex items-center justify-between text-slate-300 text-sm">
                 <span className="font-semibold">Spectrum Display</span>
