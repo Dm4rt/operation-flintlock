@@ -11,11 +11,27 @@ import useCountdown from '../../hooks/useCountdown';
 import useSession from '../../hooks/useSession';
 import StarBackground from '../StarBackground';
 
+const MIN_SPAN = 200_000; // 200 kHz
+const MAX_SPAN = 160_000_000; // 160 MHz
+
 const formatFrequency = (hz = 0) => {
   if (!Number.isFinite(hz)) return '---';
   if (hz >= 1_000_000) return `${(hz / 1_000_000).toFixed(3)} MHz`;
   if (hz >= 1_000) return `${(hz / 1_000).toFixed(1)} kHz`;
   return `${hz.toFixed(0)} Hz`;
+};
+
+const spanFromZoom = (zoomPercent) => {
+  const normalized = zoomPercent / 100;
+  const ratio = MAX_SPAN / MIN_SPAN;
+  return MIN_SPAN * Math.pow(ratio, normalized);
+};
+
+const zoomFromSpan = (spanValue) => {
+  const clampedSpan = Math.min(MAX_SPAN, Math.max(MIN_SPAN, spanValue));
+  const ratio = MAX_SPAN / MIN_SPAN;
+  const normalized = Math.log(clampedSpan / MIN_SPAN) / Math.log(ratio);
+  return Math.min(100, Math.max(0, normalized * 100));
 };
 
 export default function SdrAdminPanel({ operationId }) {
@@ -31,6 +47,10 @@ export default function SdrAdminPanel({ operationId }) {
   const [isPaused, setIsPaused] = useState(false); // Start unpaused so spectrum shows immediately
   const [centerField, setCenterField] = useState((DEFAULT_CENTER_FREQ / 1_000_000).toFixed(3));
   const [spanField, setSpanField] = useState((DEFAULT_SPAN / 1_000_000).toFixed(2));
+  const [zoomLevel, setZoomLevel] = useState(() => zoomFromSpan(DEFAULT_SPAN));
+  const [displayMin, setDisplayMin] = useState(-120);
+  const [displayMax, setDisplayMax] = useState(-20);
+  const [rangeLocked, setRangeLocked] = useState(false);
 
   const engineRef = useRef(null);
   const audioRef = useRef(null);
@@ -212,18 +232,67 @@ export default function SdrAdminPanel({ operationId }) {
   const centerFreq = sdrState?.centerFreq ?? DEFAULT_CENTER_FREQ;
   const span = sdrState?.span ?? DEFAULT_SPAN;
   const noiseFloor = sdrState?.noiseFloor ?? DEFAULT_NOISE_FLOOR;
-  const fftData = sdrState?.fftData ?? [];
+  const rawFftData = sdrState?.fftData ?? [];
   const signals = sdrState?.signals ?? [];
+
+  const rfBand = useMemo(() => {
+    if (!signals.length) {
+      const buffer = Math.max(span * 2, DEFAULT_SPAN * 2);
+      return {
+        min: centerFreq - buffer,
+        max: centerFreq + buffer
+      };
+    }
+    const freqs = signals.map((signal) => signal.freq);
+    const minFreq = Math.min(...freqs, centerFreq);
+    const maxFreq = Math.max(...freqs, centerFreq);
+    const padding = Math.max(span, DEFAULT_SPAN) * 1.5;
+    return {
+      min: minFreq - padding,
+      max: maxFreq + padding
+    };
+  }, [signals, centerFreq, span]);
+
+  const fftData = useMemo(() => {
+    if (!rawFftData.length) return [];
+    const finite = rawFftData.filter((value) => Number.isFinite(value));
+    if (!finite.length) return [];
+
+    const bandWidth = Math.max(rfBand.max - rfBand.min, span || DEFAULT_SPAN);
+    const startFreq = centerFreq - span / 2;
+    const normalizedStart = (startFreq - rfBand.min) / bandWidth;
+    const normalizedSpan = Math.min(1, span / bandWidth);
+    const baseLength = rawFftData.length;
+
+    const sampleAt = (normalized) => {
+      const clamped = Math.min(1, Math.max(0, normalized));
+      const index = clamped * (baseLength - 1);
+      const lower = Math.floor(index);
+      const upper = Math.min(baseLength - 1, lower + 1);
+      const t = index - lower;
+      return rawFftData[lower] * (1 - t) + rawFftData[upper] * t;
+    };
+
+    const result = new Array(baseLength);
+    for (let i = 0; i < baseLength; i += 1) {
+      const pos = i / (baseLength - 1 || 1);
+      const normalizedPos = normalizedStart + pos * normalizedSpan;
+      const sampled = sampleAt(normalizedPos);
+      const baselineShift = noiseFloor - DEFAULT_NOISE_FLOOR;
+      result[i] = sampled + baselineShift;
+    }
+    return result;
+  }, [rawFftData, centerFreq, span, noiseFloor, rfBand]);
 
   // Debug: log real audio FFT stats
   useEffect(() => {
-    if (fftData.length > 0 && audioReady) {
-      const finite = fftData.filter(v => Number.isFinite(v));
+    if (rawFftData.length > 0 && audioReady) {
+      const finite = rawFftData.filter(v => Number.isFinite(v));
       if (finite.length > 0) {
-        console.log(`📊 Real Audio FFT: ${fftData.length} bins, range: [${Math.min(...finite).toFixed(1)}, ${Math.max(...finite).toFixed(1)}] dB`);
+        console.log(`📊 Real Audio FFT: ${rawFftData.length} bins, range: [${Math.min(...finite).toFixed(1)}, ${Math.max(...finite).toFixed(1)}] dB`);
       }
     }
-  }, [fftData, audioReady]);
+  }, [rawFftData, audioReady]);
 
   useEffect(() => {
     setCenterField((centerFreq / 1_000_000).toFixed(3));
@@ -231,6 +300,7 @@ export default function SdrAdminPanel({ operationId }) {
 
   useEffect(() => {
     setSpanField((span / 1_000_000).toFixed(2));
+    setZoomLevel(zoomFromSpan(span));
   }, [span]);
 
   const dbRange = useMemo(() => {
@@ -249,6 +319,12 @@ export default function SdrAdminPanel({ operationId }) {
     };
   }, [fftData, noiseFloor]);
 
+  useEffect(() => {
+    if (rangeLocked) return;
+    setDisplayMin(dbRange.min);
+    setDisplayMax(dbRange.max);
+  }, [dbRange, rangeLocked]);
+
   const handleCenterFreq = (value) => {
     const engine = engineRef.current;
     if (!engine) return;
@@ -265,12 +341,38 @@ export default function SdrAdminPanel({ operationId }) {
     setSdrState((prev) => ({ ...(prev || {}), span: value }));
   };
 
+  const handleZoomLevel = (value) => {
+    const zoom = Number(value);
+    setZoomLevel(zoom);
+    const derivedSpan = spanFromZoom(zoom);
+    setSpanField((derivedSpan / 1_000_000).toFixed(2));
+    handleSpan(derivedSpan);
+  };
+
   const handleNoiseFloor = (value) => {
     const engine = engineRef.current;
     if (!engine) return;
     engine.setNoiseFloor(value);
     engine.forceSync();
     setSdrState((prev) => ({ ...(prev || {}), noiseFloor: value }));
+  };
+
+  const handleDisplayMinChange = (value) => {
+    setRangeLocked(true);
+    const numeric = Number(value);
+    setDisplayMin(Math.min(numeric, displayMax - 2));
+  };
+
+  const handleDisplayMaxChange = (value) => {
+    setRangeLocked(true);
+    const numeric = Number(value);
+    setDisplayMax(Math.max(numeric, displayMin + 2));
+  };
+
+  const resetDisplayRange = () => {
+    setRangeLocked(false);
+    setDisplayMin(dbRange.min);
+    setDisplayMax(dbRange.max);
   };
 
   const commitCenterField = () => {
@@ -282,7 +384,9 @@ export default function SdrAdminPanel({ operationId }) {
   const commitSpanField = () => {
     const parsed = parseFloat(spanField);
     if (Number.isNaN(parsed)) return;
-    handleSpan(Math.round(parsed * 1_000_000));
+    const spanHz = Math.min(MAX_SPAN, Math.max(MIN_SPAN, parsed * 1_000_000));
+    handleSpan(Math.round(spanHz));
+    setZoomLevel(zoomFromSpan(spanHz));
   };
 
   const handleEnableAudio = async () => {
@@ -461,15 +565,16 @@ export default function SdrAdminPanel({ operationId }) {
                 </div>
                 <div>
                   <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Span</span>
-                    <span className="font-mono text-slate-200">{(span / 1_000_000).toFixed(2)} MHz</span>
+                    <span>Zoom</span>
+                    <span className="font-mono text-slate-200">{(span / 1_000_000).toFixed(2)} MHz span</span>
                   </div>
                   <input
                     type="range"
-                    min={200_000}
-                    max={30_000_000}
-                    value={span}
-                    onChange={(event) => handleSpan(Number(event.target.value))}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={zoomLevel}
+                    onChange={(event) => handleZoomLevel(Number(event.target.value))}
                     className="w-full accent-slate-200"
                   />
                   <div className="mt-2 flex items-center gap-2">
@@ -498,6 +603,48 @@ export default function SdrAdminPanel({ operationId }) {
                     onChange={(event) => handleNoiseFloor(Number(event.target.value))}
                     className="w-full accent-slate-200"
                   />
+                </div>
+              </div>
+              <div className="mt-6 pt-4 border-t border-slate-800">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[11px] uppercase text-slate-500">Display Range</p>
+                  <button
+                    type="button"
+                    onClick={resetDisplayRange}
+                    className="text-[10px] uppercase tracking-wide text-blue-300 hover:text-blue-100"
+                  >
+                    {rangeLocked ? 'Reset' : 'Auto'}
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                      <span>Min</span>
+                      <span className="font-mono text-slate-200">{displayMin.toFixed(0)} dB</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-140}
+                      max={displayMax - 2}
+                      value={displayMin}
+                      onChange={(event) => handleDisplayMinChange(Number(event.target.value))}
+                      className="w-full accent-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                      <span>Max</span>
+                      <span className="font-mono text-slate-200">{displayMax.toFixed(0)} dB</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={displayMin + 2}
+                      max={0}
+                      value={displayMax}
+                      onChange={(event) => handleDisplayMaxChange(Number(event.target.value))}
+                      className="w-full accent-slate-200"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -570,8 +717,8 @@ export default function SdrAdminPanel({ operationId }) {
                 onChangeSpan={handleSpan}
                 height={220}
                 noiseFloor={noiseFloor}
-                minDb={dbRange.min}
-                maxDb={dbRange.max}
+                minDb={displayMin}
+                maxDb={displayMax}
               />
               {!audioReady && (
                 <p className="text-[11px] text-amber-300 uppercase tracking-[0.3em]">Audio muted -- click Enable Audio to monitor broadcasts</p>
@@ -579,8 +726,8 @@ export default function SdrAdminPanel({ operationId }) {
               <WaterfallCanvas
                 fftData={isPaused ? [] : fftData}
                 height={380}
-                minDb={dbRange.min}
-                maxDb={dbRange.max}
+                minDb={displayMin}
+                maxDb={displayMax}
               />
             </div>
 
