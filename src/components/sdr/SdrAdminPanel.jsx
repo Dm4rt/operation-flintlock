@@ -159,7 +159,43 @@ export default function SdrAdminPanel({ operationId }) {
             <div className="flex items-center gap-6 text-right">
               <div>
                 <p className="text-[11px] uppercase text-slate-500">Center Frequency</p>
-                <p className="text-3xl font-mono font-black text-blue-200">{formatFreq(centerFreq)}</p>
+                <div className="flex items-center gap-0.5">
+                  {(() => {
+                    const freqStr = String(centerFreq).padStart(9, '0');
+                    const digits = freqStr.split('');
+                    return digits.map((digit, idx) => {
+                      const power = digits.length - 1 - idx;
+                      const increment = Math.pow(10, power);
+                      return (
+                        <div key={idx} className="relative group">
+                          <button
+                            onClick={() => {
+                              const newFreq = centerFreq + increment;
+                              if (newFreq <= 130_000_000) setCenterFreq(newFreq);
+                            }}
+                            className="absolute -top-3 left-0 right-0 h-3 opacity-0 hover:opacity-100 flex items-center justify-center cursor-pointer"
+                          >
+                            <span className="text-[10px] text-blue-400">▲</span>
+                          </button>
+                          <span className="text-3xl font-mono font-black text-blue-200 hover:text-blue-300 cursor-pointer select-none">
+                            {digit}
+                          </span>
+                          <button
+                            onClick={() => {
+                              const newFreq = centerFreq - increment;
+                              if (newFreq >= 80_000_000) setCenterFreq(newFreq);
+                            }}
+                            className="absolute -bottom-3 left-0 right-0 h-3 opacity-0 hover:opacity-100 flex items-center justify-center cursor-pointer"
+                          >
+                            <span className="text-[10px] text-blue-400">▼</span>
+                          </button>
+                          {(idx === 2 || idx === 5) && <span className="text-3xl font-mono font-black text-blue-200/40 mx-0.5">.</span>}
+                        </div>
+                      );
+                    });
+                  })()}
+                  <span className="text-lg font-mono text-slate-400 ml-2">MHz</span>
+                </div>
               </div>
               <div>
                 <p className="text-[11px] uppercase text-slate-500">Bandwidth</p>
