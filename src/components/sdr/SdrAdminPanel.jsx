@@ -31,6 +31,7 @@ export default function SdrAdminPanel({ operationId }) {
   const [bandwidthHz, setBandwidthHz] = useState(200_000);
   const [minDb, setMinDb] = useState(-120);
   const [maxDb, setMaxDb] = useState(-20);
+  const [span, setSpan] = useState(10_000_000);
 
   const operationStarted = session?.operationStarted;
 
@@ -112,7 +113,8 @@ export default function SdrAdminPanel({ operationId }) {
   };
 
   const handleSpanChange = (newSpan) => {
-    setSpan(newSpan);
+    const limited = clamp(newSpan, 2_000_000, 40_000_000);
+    setSpan(limited);
   };
 
   const isLocked = (tx) => {
@@ -127,7 +129,7 @@ export default function SdrAdminPanel({ operationId }) {
     return freqOk && bwOk && minOk && maxOk;
   };
 
-  const [span, setSpan] = useState(10_000_000);
+  const visualsActive = !isPaused;
 
   if (!operationStarted) {
     return (
@@ -210,6 +212,21 @@ export default function SdrAdminPanel({ operationId }) {
                     step={10_000}
                     value={bandwidthHz}
                     onChange={(e) => setBandwidthHz(Number(e.target.value))}
+                    className="w-full accent-slate-200"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                    <span>Display Span</span>
+                    <span className="font-mono text-slate-200">± {(span / 2_000_000).toFixed(2)} MHz</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2_000_000}
+                    max={40_000_000}
+                    step={250_000}
+                    value={span}
+                    onChange={(e) => handleSpanChange(Number(e.target.value))}
                     className="w-full accent-slate-200"
                   />
                 </div>
@@ -307,12 +324,14 @@ export default function SdrAdminPanel({ operationId }) {
                 height={220}
                 onChangeCenterFreq={handleCenterChange}
                 onChangeSpan={handleSpanChange}
+                isActive={visualsActive}
               />
               <WaterfallCanvas
                 centerFreq={centerFreq}
                 span={span}
                 transmissions={transmissions}
                 height={380}
+                isActive={visualsActive}
               />
             </div>
 

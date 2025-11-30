@@ -1,10 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 
-/**
- * Lightweight spectrum display with pregenerated noise + fixed peaks.
- * No real-time FFT, just a static pattern that updates occasionally.
- */
-
 const BINS = 512;
 const GRID_LINES = 8;
 
@@ -14,7 +9,6 @@ const formatFreq = (hz) => {
   return `${hz.toFixed(0)} Hz`;
 };
 
-// Pregenerate a noise floor pattern once
 const generateNoiseFloor = (count, baseDb, jitter) => {
   const bins = new Float32Array(count);
   for (let i = 0; i < count; i++) {
@@ -23,20 +17,19 @@ const generateNoiseFloor = (count, baseDb, jitter) => {
   return bins;
 };
 
-// Add a fake peak at a given frequency
-const addPeak = (bins, centerFreq, span, peakFreqHz, peakWidthHz, peakStrength, animFrame) => {
+const addPeak = (bins, centerFreq, span, peakFreqHz, peakWidthHz, peakStrength, frameValue) => {
   const startFreq = centerFreq - span / 2;
   const endFreq = centerFreq + span / 2;
-  if (peakFreqHz < startFreq || peakFreqHz > endFreq) return; // out of view
+  if (peakFreqHz < startFreq || peakFreqHz > endFreq) return;
 
   const hzPerBin = span / bins.length;
   const centerBin = ((peakFreqHz - startFreq) / span) * bins.length;
   const sigmaBins = (peakWidthHz / hzPerBin) * 0.4;
-  const peakHeight = 18 + peakStrength * 12; // scale peak by strength
-  const jitter = Math.sin(animFrame * 0.05 + centerBin * 0.1) * 1.5; // animate peaks
+  const peakHeight = 18 + (peakStrength ?? 1) * 12;
+  const jitter = Math.sin(frameValue * 0.05 + centerBin * 0.12) * 1.2;
 
   for (let i = 0; i < bins.length; i++) {
-    const distance = (i - centerBin) / sigmaBins;
+    const distance = (i - centerBin) / (sigmaBins || 1);
     const gaussian = Math.exp(-0.5 * distance * distance);
     bins[i] += gaussian * (peakHeight + jitter);
   }
@@ -51,7 +44,8 @@ export default function SpectrumCanvas({
   height = 220,
   transmissions = [],
   onChangeCenterFreq = () => {},
-  onChangeSpan = () => {}
+  onChangeSpan = () => {},
+  isActive = true
 }) {
   const canvasRef = useRef(null);
   const noiseRef = useRef(null);
@@ -65,26 +59,27 @@ export default function SpectrumCanvas({
     const ctx = canvas.getContext('2d');
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = canvas.clientWidth * dpr;
-      canvas.height = canvas.clientHeight * dpr;
-      ctx.scale(dpr, dpr);
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
 
-    const draw = () => {
+    const draw = (frameValue = frameRef.current) => {
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
+      if (!width || !height) return;
 
       ctx.clearRect(0, 0, width, height);
 
-      // Background gradient
       const gradient = ctx.createLinearGradient(0, 0, 0, height);
       gradient.addColorStop(0, '#040815');
       gradient.addColorStop(1, '#01040a');
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
 
-      // Horizontal grid
       ctx.strokeStyle = 'rgba(59, 130, 246, 0.15)';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -95,32 +90,24 @@ export default function SpectrumCanvas({
       }
       ctx.stroke();
 
-      // Generate noise floor once per mount (or regenerate on prop change)
-      if (!noiseRef.current || noiseRef.current.length !== BINS) {
-        noiseRef.current = generateNoiseFloor(BINS * 2, -105, 12);
-      }
-
-      const source = noiseRef.current;
+      // Regenerate noise floor each frame for static-like randomness
       const bins = new Float32Array(BINS);
-      const scrollOffset = frameRef.current % source.length;
       for (let i = 0; i < BINS; i++) {
-        const idx = (i + scrollOffset) % source.length;
-        bins[i] = source[idx] + Math.sin((frameRef.current * 0.02) + (i * 0.08)) * 2;
+        // Base noise floor with random jitter
+        bins[i] = -105 + (Math.random() - 0.5) * 15;
+        // Add subtle temporal variation to peaks only
+        const temporal = Math.sin(frameValue * 0.02 + i * 0.08) * 0.6;
+        bins[i] += temporal;
       }
 
-      // Add fake peaks for each transmission (always visible, regardless of tuning)
-      transmissions.forEach(tx => {
-        addPeak(bins, centerFreq, span, tx.frequencyHz, tx.widthHz, tx.peakStrength ?? 1.0, frameRef.current);
+      transmissions.forEach((tx) => {
+        addPeak(bins, centerFreq, span, tx.frequencyHz, tx.widthHz, tx.peakStrength, frameValue);
       });
 
-      frameRef.current += 1;
-
-      // Normalize bins to [0, 1]
       const normalize = (db) => {
         return Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)));
       };
 
-      // Draw spectrum line
       ctx.strokeStyle = '#60a5fa';
       ctx.lineWidth = 1.6;
       ctx.shadowColor = '#1d4ed8';
@@ -135,7 +122,6 @@ export default function SpectrumCanvas({
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Draw bandwidth window overlay
       if (bandwidthHz > 0) {
         const startFreq = centerFreq - span / 2;
         const freqToX = (freq) => ((freq - startFreq) / span) * width;
@@ -143,15 +129,12 @@ export default function SpectrumCanvas({
         const startX = Math.max(0, freqToX(centerFreq - half));
         const endX = Math.min(width, freqToX(centerFreq + half));
         const bwWidth = Math.max(4, endX - startX);
-
         ctx.fillStyle = 'rgba(148, 163, 184, 0.12)';
         ctx.fillRect(startX, 0, bwWidth, height);
         ctx.strokeStyle = 'rgba(226, 232, 240, 0.45)';
-        ctx.lineWidth = 1;
         ctx.strokeRect(startX, 2, bwWidth, height - 4);
       }
 
-      // Center tuning line
       ctx.strokeStyle = '#f43f5e';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -159,7 +142,6 @@ export default function SpectrumCanvas({
       ctx.lineTo(width / 2, height);
       ctx.stroke();
 
-      // Vertical grid + frequency ticks
       ctx.strokeStyle = 'rgba(100, 116, 139, 0.25)';
       ctx.lineWidth = 1;
       for (let i = 0; i <= GRID_LINES; i++) {
@@ -181,21 +163,39 @@ export default function SpectrumCanvas({
       }
     };
 
-    animRef.current = requestAnimationFrame(function loop() {
-      draw();
+    const startAnimation = () => {
+      if (animRef.current) return;
+      const loop = () => {
+        const next = frameRef.current + 1;
+        frameRef.current = next;
+        draw(next);
+        animRef.current = requestAnimationFrame(loop);
+      };
       animRef.current = requestAnimationFrame(loop);
-    });
+    };
+
+    const stopAnimation = () => {
+      if (!animRef.current) return;
+      cancelAnimationFrame(animRef.current);
+      animRef.current = null;
+    };
+
+    draw(frameRef.current);
+    if (isActive) startAnimation();
 
     const handleResize = () => {
       resize();
-      draw();
+      draw(frameRef.current);
+      if (isActive && !animRef.current) startAnimation();
+      if (!isActive) stopAnimation();
     };
+
     window.addEventListener('resize', handleResize);
     return () => {
-      if (animRef.current) cancelAnimationFrame(animRef.current);
+      stopAnimation();
       window.removeEventListener('resize', handleResize);
     };
-  }, [centerFreq, span, minDb, maxDb, bandwidthHz, transmissions]);
+  }, [centerFreq, span, minDb, maxDb, bandwidthHz, transmissions, isActive]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -211,7 +211,8 @@ export default function SpectrumCanvas({
     const handleWheel = (event) => {
       event.preventDefault();
       const direction = event.deltaY > 0 ? 1 : -1;
-      const newSpan = Math.max(500_000, Math.min(160_000_000, span * (1 + direction * 0.15)));
+      const rawSpan = span * (1 + direction * 0.12);
+      const newSpan = Math.max(2_000_000, Math.min(40_000_000, rawSpan));
       onChangeSpan(Math.round(newSpan));
     };
 

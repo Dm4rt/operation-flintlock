@@ -55,22 +55,41 @@ export default function WaterfallCanvas({
   height = 380,
   transmissions = [],
   centerFreq = 100_000_000,
-  span = 10_000_000
+  span = 10_000_000,
+  isActive = true
 }) {
   const canvasRef = useRef(null);
   const frameCountRef = useRef(0);
+  const intervalRef = useRef(null);
+  const ctxRef = useRef(null);
 
+  // Initialize canvas once, preserve content across prop changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    const resize = () => {
+    ctxRef.current = ctx;
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    const handleResize = () => {
       canvas.width = canvas.clientWidth;
       canvas.height = canvas.clientHeight;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     };
-    resize();
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  // Animation loop separate from canvas initialization
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (!canvas || !ctx) return;
 
     const drawRow = () => {
       const width = canvas.width;
@@ -113,19 +132,27 @@ export default function WaterfallCanvas({
       frameCountRef.current += 1;
     };
 
-    drawRow();
-    const interval = setInterval(drawRow, 80);
+    const startAnimation = () => {
+      if (intervalRef.current) return;
+      intervalRef.current = setInterval(drawRow, 110);
+    };
 
-    const handleResize = () => {
-      resize();
-      draw();
+    const stopAnimation = () => {
+      if (!intervalRef.current) return;
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     };
-    window.addEventListener('resize', handleResize);
+
+    if (isActive) {
+      startAnimation();
+    } else {
+      stopAnimation();
+    }
+
     return () => {
-      clearInterval(interval);
-      window.removeEventListener('resize', handleResize);
+      stopAnimation();
     };
-  }, [transmissions, centerFreq, span]);
+  }, [transmissions, centerFreq, span, isActive]);
 
   return (
     <div
