@@ -4,19 +4,21 @@
     "name": "Mission Broadcast Alpha",
     "description": "Primary mission update loop carrying command net traffic.",
     "audioPath": "/audio/broadcast_1.mp3",
-    "defaultPower": -25,
-    "widthHz": 180000,
     "frequencyHz": 100800000,
-    "notes": "Shown in UI as a broadcast signal; tune within ±90 kHz for full fidelity."
+    "widthHz": 180000,
+    "minDb": -120,
+    "maxDb": -20,
+    "peakStrength": 0.8
   },
   {
     "id": "mission-broadcast-bravo",
     "name": "Mission Broadcast Bravo",
     "description": "Redundant uplink carrying telemetry and SITREP traffic.",
     "audioPath": "/audio/broadcast_1.mp3",
-    "defaultPower": -32,
-    "widthHz": 160000,
     "frequencyHz": 102300000,
-    "notes": "Shares the same audio asset for now but provides a second dial-in value."
+    "widthHz": 160000,
+    "minDb": -120,
+    "maxDb": -20,
+    "peakStrength": 0.5
   }
 ]

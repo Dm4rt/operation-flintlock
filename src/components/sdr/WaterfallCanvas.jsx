@@ -1,82 +1,138 @@
 import React, { useEffect, useRef } from 'react';
 
-const mapToColor = (value, min, max) => {
-  const clamped = Math.max(min, Math.min(max, value));
-  const ratio = (clamped - min) / (max - min);
-  const r = Math.round(10 + ratio * 80);
-  const g = Math.round(40 + ratio * 140);
-  const b = Math.round(120 + ratio * 100);
-  return `rgb(${r}, ${g}, ${b})`;
+/**
+ * Lightweight waterfall with pregenerated noise rows.
+ * No real-time processing—just cycles through a few static rows.
+ */
+
+const WATERFALL_BINS = 512;
+
+// SDR++ style gradient (blue → white → yellow)
+const colormap = [
+  [0, 0, 20],
+  [0, 0, 30],
+  [0, 0, 50],
+  [0, 0, 91],
+  [1, 3, 138],
+  [2, 7, 168],
+  [3, 18, 194],
+  [5, 32, 206],
+  [12, 44, 199],
+  [18, 57, 176],
+  [23, 65, 157],
+  [39, 82, 135],
+  [56, 100, 120],
+  [81, 125, 105],
+  [104, 142, 96],
+  [138, 164, 88],
+  [172, 187, 84],
+  [206, 211, 84],
+  [230, 228, 98],
+  [252, 244, 114],
+  [255, 253, 140],
+  [255, 254, 168],
+  [255, 254, 203],
+  [255, 254, 237],
+  [255, 254, 254]
+];
+
+const getColor = (value) => {
+  const index = Math.floor(value * (colormap.length - 1));
+  const clamped = Math.max(0, Math.min(colormap.length - 1, index));
+  return colormap[clamped];
 };
 
-const ROW_HEIGHT = 3;
+// Pregenerate a single noise row
+const generateNoiseRow = (count) => {
+  const row = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    row[i] = 0.2 + Math.random() * 0.3; // normalized [0, 1]
+  }
+  return row;
+};
 
-export default function WaterfallCanvas({ fftData = [], minDb = -130, maxDb = -20, height = 320 }) {
+export default function WaterfallCanvas({
+  height = 380,
+  transmissions = [],
+  centerFreq = 100_000_000,
+  span = 10_000_000
+}) {
   const canvasRef = useRef(null);
-  const ctxRef = useRef(null);
-  const rowsRef = useRef([]);
-  const maxRowsRef = useRef(0);
-
-  const drawRows = () => {
-    const canvas = canvasRef.current;
-    const ctx = ctxRef.current;
-    if (!canvas || !ctx) return;
-
-    const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
-    ctx.clearRect(0, 0, width, height);
-
-    if (!rowsRef.current.length) return;
-    const binWidth = width / rowsRef.current[0].length;
-    const totalRows = rowsRef.current.length;
-
-    rowsRef.current.forEach((row, rowIndex) => {
-      const y = height - (totalRows - rowIndex) * ROW_HEIGHT;
-      row.forEach((color, column) => {
-        ctx.fillStyle = color;
-        ctx.fillRect(column * binWidth, y, binWidth + 1, ROW_HEIGHT + 1);
-      });
-    });
-  };
+  const frameCountRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctxRef.current = ctx;
 
+    const ctx = canvas.getContext('2d');
     const resize = () => {
-      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      canvas.width = canvas.clientWidth * dpr;
-      canvas.height = canvas.clientHeight * dpr;
-      ctx.scale(dpr, dpr);
-      maxRowsRef.current = Math.max(1, Math.floor(canvas.clientHeight / ROW_HEIGHT));
-      drawRows();
+    };
+    resize();
+
+    const drawRow = () => {
+      const width = canvas.width;
+      const height = canvas.height;
+      if (!width || !height) return;
+
+      // Shift existing image down by 1 pixel
+      ctx.drawImage(canvas, 0, 0, width, height - 1, 0, 1, width, height - 1);
+
+      // Build new row based on noise + peaks
+      const rowData = ctx.createImageData(width, 1);
+      const buffer = rowData.data;
+      const noiseRow = generateNoiseRow(width);
+
+      transmissions.forEach(tx => {
+        const startFreq = centerFreq - span / 2;
+        const endFreq = centerFreq + span / 2;
+        if (tx.frequencyHz < startFreq || tx.frequencyHz > endFreq) return;
+        const centerX = ((tx.frequencyHz - startFreq) / span) * width;
+        const sigma = (tx.widthHz / span) * width * 0.4;
+        const strength = tx.peakStrength ?? 1.0;
+        for (let x = 0; x < width; x++) {
+          const distance = (x - centerX) / (sigma || 1);
+          const gaussian = Math.exp(-0.5 * distance * distance);
+          noiseRow[x] = Math.min(1, noiseRow[x] + gaussian * 0.6 * strength);
+        }
+      });
+
+      for (let x = 0; x < width; x++) {
+        const value = noiseRow[x];
+        const [r, g, b] = getColor(value);
+        const idx = x * 4;
+        buffer[idx] = r;
+        buffer[idx + 1] = g;
+        buffer[idx + 2] = b;
+        buffer[idx + 3] = 255;
+      }
+
+      ctx.putImageData(rowData, 0, 0);
+      frameCountRef.current += 1;
     };
 
-    resize();
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, []);
+    drawRow();
+    const interval = setInterval(drawRow, 80);
 
-  useEffect(() => {
-    if (!fftData.length || !canvasRef.current) return;
-    const colors = fftData.map((value) => mapToColor(value, minDb, maxDb));
-    const maxRows = maxRowsRef.current || Math.floor(canvasRef.current.clientHeight / ROW_HEIGHT) || 1;
-    rowsRef.current = [...rowsRef.current.slice(-(maxRows - 1)), colors];
-    drawRows();
-  }, [fftData, minDb, maxDb]);
+    const handleResize = () => {
+      resize();
+      draw();
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [transmissions, centerFreq, span]);
 
   return (
     <div
-      className="relative w-full rounded-lg border border-slate-900 bg-[#02050b] overflow-hidden shadow-inner shadow-black/40"
+      className="relative w-full rounded-lg border border-slate-900 bg-black overflow-hidden shadow-inner shadow-black/40"
       style={{ height }}
     >
-      <canvas ref={canvasRef} className="w-full h-full" />
-      <div className="absolute inset-x-4 top-2 text-[10px] uppercase tracking-widest text-slate-500 pointer-events-none">
-        Waterfall Persistence
-      </div>
+      <canvas ref={canvasRef} className="w-full h-full block" style={{ imageRendering: 'auto', display: 'block' }} />
     </div>
   );
 }

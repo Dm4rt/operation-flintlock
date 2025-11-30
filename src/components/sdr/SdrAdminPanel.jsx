@@ -1,667 +1,268 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import SpectrumCanvas from './SpectrumCanvas';
-import WaterfallCanvas from './WaterfallCanvas';
-import FakeRFEngine, { DEFAULT_CENTER_FREQ, DEFAULT_SPAN, DEFAULT_NOISE_FLOOR } from '../../engine/FakeRFEngine';
-import AudioEngine from '../../audio/AudioEngine';
-import audioTransmissions from '../../data/audioTransmissions.json';
-import { db } from '../../services/firebase';
+import SimpleTuner from '../../engine/SimpleTuner';
+import transmissions from '../../data/audioTransmissions.json';
 import useCountdown from '../../hooks/useCountdown';
 import useSession from '../../hooks/useSession';
 import StarBackground from '../StarBackground';
+import SpectrumCanvas from './SpectrumCanvas';
+import WaterfallCanvas from './WaterfallCanvas';
 
-const MIN_SPAN = 200_000; // 200 kHz
-const MAX_SPAN = 160_000_000; // 160 MHz
-
-const formatFrequency = (hz = 0) => {
-  if (!Number.isFinite(hz)) return '---';
+const formatFreq = (hz) => {
   if (hz >= 1_000_000) return `${(hz / 1_000_000).toFixed(3)} MHz`;
   if (hz >= 1_000) return `${(hz / 1_000).toFixed(1)} kHz`;
   return `${hz.toFixed(0)} Hz`;
 };
 
-const spanFromZoom = (zoomPercent) => {
-  const normalized = zoomPercent / 100;
-  const ratio = MAX_SPAN / MIN_SPAN;
-  return MIN_SPAN * Math.pow(ratio, normalized);
-};
-
-const zoomFromSpan = (spanValue) => {
-  const clampedSpan = Math.min(MAX_SPAN, Math.max(MIN_SPAN, spanValue));
-  const ratio = MAX_SPAN / MIN_SPAN;
-  const normalized = Math.log(clampedSpan / MIN_SPAN) / Math.log(ratio);
-  return Math.min(100, Math.max(0, normalized * 100));
-};
+const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
 
 export default function SdrAdminPanel({ operationId }) {
   const navigate = useNavigate();
   const { timeLeft } = useCountdown(operationId);
   const { session, join } = useSession(operationId);
 
-  const [sdrState, setSdrState] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [audioReady, setAudioReady] = useState(false);
-  const [audioError, setAudioError] = useState(null);
-  const [volume, setVolume] = useState(0.75);
-  const [isPaused, setIsPaused] = useState(false); // Start unpaused so spectrum shows immediately
-  const [centerField, setCenterField] = useState((DEFAULT_CENTER_FREQ / 1_000_000).toFixed(3));
-  const [spanField, setSpanField] = useState((DEFAULT_SPAN / 1_000_000).toFixed(2));
-  const [zoomLevel, setZoomLevel] = useState(() => zoomFromSpan(DEFAULT_SPAN));
-  const [displayMin, setDisplayMin] = useState(-120);
-  const [displayMax, setDisplayMax] = useState(-20);
-  const [rangeLocked, setRangeLocked] = useState(false);
+  const tunerRef = useRef(null);
 
-  const engineRef = useRef(null);
-  const audioRef = useRef(null);
-  const volumeRef = useRef(volume);
-  const lastUpdateRef = useRef(0);
+  const [audioReady, setAudioReady] = useState(false);
+  const [volume, setVolume] = useState(0.75);
+  const [isPaused, setIsPaused] = useState(false);
+
+  const [centerFreq, setCenterFreq] = useState(100_800_000);
+  const [bandwidthHz, setBandwidthHz] = useState(200_000);
+  const [minDb, setMinDb] = useState(-120);
+  const [maxDb, setMaxDb] = useState(-20);
 
   const operationStarted = session?.operationStarted;
 
-  // Register team presence
+  // Register EW team
   useEffect(() => {
     if (!operationId) return;
     (async () => {
       try {
         await join('ew', { name: 'Space Ops - EW' });
-        console.log('✅ EW team registered in participants');
-      } catch (error) {
-        console.error('❌ Failed to register EW team:', error);
+        console.log('✅ EW team registered');
+      } catch (err) {
+        console.error('❌ EW registration failed', err);
       }
     })();
   }, [operationId, join]);
 
-  const transmissionMap = useMemo(() => {
-    const map = new Map();
-    audioTransmissions.forEach((entry) => map.set(entry.id, entry));
-    return map;
-  }, []);
-
-  const defaultSignalConfigs = useMemo(() => (
-    audioTransmissions.map((profile) => ({
-      id: profile.id,
-      type: 'broadcast',
-      freq: profile.frequencyHz ?? DEFAULT_CENTER_FREQ,
-      power: profile.defaultPower ?? -26,
-      width: profile.widthHz ?? DEFAULT_SPAN * 0.05,
-      audioId: profile.id,
-      label: profile.name
-    }))
-  ), []);
-
+  // Init tuner
   useEffect(() => {
     if (!operationStarted) return;
 
-    const engine = new AudioEngine();
-    audioRef.current = engine;
-    let cancelled = false;
+    const tuner = new SimpleTuner();
+    tunerRef.current = tuner;
 
     const bootstrap = async () => {
-      try {
-        await engine.init();
-        await engine.loadCatalog(audioTransmissions);
-        if (cancelled) return;
-        engine.setMasterVolume(volumeRef.current);
-        setAudioReady(engine.isReady());
-      } catch (error) {
-        if (!cancelled) setAudioError(error.message);
-      }
+      await tuner.init();
+      tuner.setVolume(volume);
+      setAudioReady(tuner.isReady());
     };
-
     bootstrap();
 
-    const handleFirstInteraction = async () => {
-      try {
-        const ready = await engine.resume();
-        if (!ready) {
-          setAudioError('Audio context blocked by browser.');
-          return;
-        }
-        await engine.loadCatalog(audioTransmissions);
-        engine.setMasterVolume(volumeRef.current);
+    const handleClick = async () => {
+      const ready = await tuner.resume();
+      if (ready) {
+        tuner.setVolume(volume);
         setAudioReady(true);
-        setAudioError(null);
-      } catch (error) {
-        setAudioError(error.message);
       }
     };
-
-    window.addEventListener('pointerdown', handleFirstInteraction, { once: true });
+    window.addEventListener('pointerdown', handleClick, { once: true });
 
     return () => {
-      cancelled = true;
-      window.removeEventListener('pointerdown', handleFirstInteraction);
-      engine.stopAll();
-      audioRef.current = null;
+      window.removeEventListener('pointerdown', handleClick);
+      tuner.stopAll();
+      tunerRef.current = null;
     };
-  }, [operationStarted]);
+  }, [operationStarted, volume]);
+
+  // Update tuning when controls change
+  useEffect(() => {
+    tunerRef.current?.updateTuning({ centerFreq, bandwidthHz, minDb, maxDb });
+  }, [centerFreq, bandwidthHz, minDb, maxDb]);
 
   useEffect(() => {
-    if (!operationId || !operationStarted) return;
-
-    const engine = new FakeRFEngine(operationId);
-    engineRef.current = engine;
-
-    const unsubscribe = engine.onFrame((frame) => {
-      const timestamp = Date.parse(frame.updatedAt) || Date.now();
-      lastUpdateRef.current = timestamp;
-      setSdrState((prev) => {
-        const merged = { ...(prev || {}), ...frame };
-        audioRef.current?.updateState({
-          centerFreq: merged.centerFreq,
-          span: merged.span,
-          signals: merged.signals,
-          jamming: merged.jamming
-        });
-        return merged;
-      });
-      setLoading(false);
-    });
-
-    engine.startEngine();
-    engine.ensureSignals(defaultSignalConfigs);
-    engine.forceSync();
-
-    return () => {
-      unsubscribe();
-      engine.stopEngine();
-      engineRef.current = null;
-    };
-  }, [operationId, operationStarted, defaultSignalConfigs]);
-
-  // Real-time FFT from AudioEngine analyser
-  useEffect(() => {
-    if (!audioReady) return;
-
-    let animationId;
-    const updateFFT = () => {
-      if (audioRef.current) {
-        const fft = audioRef.current.getFFTData();
-        setSdrState(prev => ({ ...prev, fftData: Array.from(fft) }));
-      }
-      animationId = requestAnimationFrame(updateFFT);
-    };
-    
-    updateFFT();
-    return () => {
-      if (animationId) cancelAnimationFrame(animationId);
-    };
-  }, [audioReady]);
-
-  useEffect(() => {
-    if (!operationId) return;
-    const stateDoc = doc(db, 'sessions', operationId, 'sdrState', 'state');
-
-    const unsubscribe = onSnapshot(stateDoc, async (snapshot) => {
-      if (!snapshot.exists()) {
-        await setDoc(stateDoc, {
-          centerFreq: DEFAULT_CENTER_FREQ,
-          span: DEFAULT_SPAN,
-          noiseFloor: DEFAULT_NOISE_FLOOR,
-          signals: [],
-          jamming: null,
-          updatedAt: new Date().toISOString()
-        });
-        return;
-      }
-
-      const data = snapshot.data();
-      const timestamp = Date.parse(data.updatedAt || new Date().toISOString());
-      if (timestamp >= lastUpdateRef.current) {
-        lastUpdateRef.current = timestamp;
-        setSdrState(data);
-        audioRef.current?.updateState({
-          centerFreq: data.centerFreq,
-          span: data.span,
-          signals: data.signals,
-          jamming: data.jamming
-        });
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [operationId]);
-
-  useEffect(() => {
-    volumeRef.current = volume;
-    audioRef.current?.setMasterVolume(volume);
+    tunerRef.current?.setVolume(volume);
   }, [volume]);
 
-  const centerFreq = sdrState?.centerFreq ?? DEFAULT_CENTER_FREQ;
-  const span = sdrState?.span ?? DEFAULT_SPAN;
-  const noiseFloor = sdrState?.noiseFloor ?? DEFAULT_NOISE_FLOOR;
-  const rawFftData = sdrState?.fftData ?? [];
-  const signals = sdrState?.signals ?? [];
-
-  const rfBand = useMemo(() => {
-    if (!signals.length) {
-      const buffer = Math.max(span * 2, DEFAULT_SPAN * 2);
-      return {
-        min: centerFreq - buffer,
-        max: centerFreq + buffer
-      };
-    }
-    const freqs = signals.map((signal) => signal.freq);
-    const minFreq = Math.min(...freqs, centerFreq);
-    const maxFreq = Math.max(...freqs, centerFreq);
-    const padding = Math.max(span, DEFAULT_SPAN) * 1.5;
-    return {
-      min: minFreq - padding,
-      max: maxFreq + padding
-    };
-  }, [signals, centerFreq, span]);
-
-  const fftData = useMemo(() => {
-    if (!rawFftData.length) return [];
-    const finite = rawFftData.filter((value) => Number.isFinite(value));
-    if (!finite.length) return [];
-
-    const bandWidth = Math.max(rfBand.max - rfBand.min, span || DEFAULT_SPAN);
-    const startFreq = centerFreq - span / 2;
-    const normalizedStart = (startFreq - rfBand.min) / bandWidth;
-    const normalizedSpan = Math.min(1, span / bandWidth);
-    const baseLength = rawFftData.length;
-
-    const sampleAt = (normalized) => {
-      const clamped = Math.min(1, Math.max(0, normalized));
-      const index = clamped * (baseLength - 1);
-      const lower = Math.floor(index);
-      const upper = Math.min(baseLength - 1, lower + 1);
-      const t = index - lower;
-      return rawFftData[lower] * (1 - t) + rawFftData[upper] * t;
-    };
-
-    const result = new Array(baseLength);
-    for (let i = 0; i < baseLength; i += 1) {
-      const pos = i / (baseLength - 1 || 1);
-      const normalizedPos = normalizedStart + pos * normalizedSpan;
-      const sampled = sampleAt(normalizedPos);
-      const baselineShift = noiseFloor - DEFAULT_NOISE_FLOOR;
-      result[i] = sampled + baselineShift;
-    }
-    return result;
-  }, [rawFftData, centerFreq, span, noiseFloor, rfBand]);
-
-  // Debug: log real audio FFT stats
-  useEffect(() => {
-    if (rawFftData.length > 0 && audioReady) {
-      const finite = rawFftData.filter(v => Number.isFinite(v));
-      if (finite.length > 0) {
-        console.log(`📊 Real Audio FFT: ${rawFftData.length} bins, range: [${Math.min(...finite).toFixed(1)}, ${Math.max(...finite).toFixed(1)}] dB`);
-      }
-    }
-  }, [rawFftData, audioReady]);
-
-  useEffect(() => {
-    setCenterField((centerFreq / 1_000_000).toFixed(3));
-  }, [centerFreq]);
-
-  useEffect(() => {
-    setSpanField((span / 1_000_000).toFixed(2));
-    setZoomLevel(zoomFromSpan(span));
-  }, [span]);
-
-  const dbRange = useMemo(() => {
-    if (!fftData?.length) {
-      return { min: noiseFloor - 45, max: noiseFloor + 15 };
-    }
-    const finite = fftData.filter((value) => Number.isFinite(value));
-    if (!finite.length) {
-      return { min: noiseFloor - 45, max: noiseFloor + 15 };
-    }
-    const localMin = Math.min(...finite);
-    const localMax = Math.max(...finite);
-    return {
-      min: Math.min(localMin - 8, noiseFloor - 55),
-      max: Math.max(localMax + 6, noiseFloor + 20)
-    };
-  }, [fftData, noiseFloor]);
-
-  useEffect(() => {
-    if (rangeLocked) return;
-    setDisplayMin(dbRange.min);
-    setDisplayMax(dbRange.max);
-  }, [dbRange, rangeLocked]);
-
-  const handleCenterFreq = (value) => {
-    const engine = engineRef.current;
-    if (!engine) return;
-    engine.setCenterFreq(value);
-    engine.forceSync();
-    setSdrState((prev) => ({ ...(prev || {}), centerFreq: value }));
-  };
-
-  const handleSpan = (value) => {
-    const engine = engineRef.current;
-    if (!engine) return;
-    engine.setSpan(value);
-    engine.forceSync();
-    setSdrState((prev) => ({ ...(prev || {}), span: value }));
-  };
-
-  const handleZoomLevel = (value) => {
-    const zoom = Number(value);
-    setZoomLevel(zoom);
-    const derivedSpan = spanFromZoom(zoom);
-    setSpanField((derivedSpan / 1_000_000).toFixed(2));
-    handleSpan(derivedSpan);
-  };
-
-  const handleNoiseFloor = (value) => {
-    const engine = engineRef.current;
-    if (!engine) return;
-    engine.setNoiseFloor(value);
-    engine.forceSync();
-    setSdrState((prev) => ({ ...(prev || {}), noiseFloor: value }));
-  };
-
-  const handleDisplayMinChange = (value) => {
-    setRangeLocked(true);
-    const numeric = Number(value);
-    setDisplayMin(Math.min(numeric, displayMax - 2));
-  };
-
-  const handleDisplayMaxChange = (value) => {
-    setRangeLocked(true);
-    const numeric = Number(value);
-    setDisplayMax(Math.max(numeric, displayMin + 2));
-  };
-
-  const resetDisplayRange = () => {
-    setRangeLocked(false);
-    setDisplayMin(dbRange.min);
-    setDisplayMax(dbRange.max);
-  };
-
-  const commitCenterField = () => {
-    const parsed = parseFloat(centerField);
-    if (Number.isNaN(parsed)) return;
-    handleCenterFreq(Math.round(parsed * 1_000_000));
-  };
-
-  const commitSpanField = () => {
-    const parsed = parseFloat(spanField);
-    if (Number.isNaN(parsed)) return;
-    const spanHz = Math.min(MAX_SPAN, Math.max(MIN_SPAN, parsed * 1_000_000));
-    handleSpan(Math.round(spanHz));
-    setZoomLevel(zoomFromSpan(spanHz));
-  };
-
   const handleEnableAudio = async () => {
-    if (!audioRef.current) return;
-    try {
-      const ready = await audioRef.current.resume();
-      if (!ready) {
-        setAudioError('Audio context blocked by browser.');
-        return;
-      }
-      await audioRef.current.loadCatalog(audioTransmissions);
-      audioRef.current.setMasterVolume(volumeRef.current);
+    if (!tunerRef.current) return;
+    const ready = await tunerRef.current.resume();
+    if (ready) {
+      tunerRef.current.setVolume(volume);
       setAudioReady(true);
       setIsPaused(false);
-      setAudioError(null);
-    } catch (error) {
-      setAudioError(error.message);
     }
   };
 
   const handlePlayPause = () => {
-    if (!audioRef.current) return;
+    if (!tunerRef.current) return;
     if (isPaused) {
-      audioRef.current.unmute();
+      tunerRef.current.unmute();
       setIsPaused(false);
     } else {
-      audioRef.current.mute();
+      tunerRef.current.mute();
       setIsPaused(true);
     }
   };
 
-  if (!operationId) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-slate-950 text-white">
-        <p className="text-lg font-semibold">No operation selected.</p>
-      </div>
-    );
-  }
+  const handleCenterChange = (freq) => {
+    setCenterFreq(freq);
+  };
+
+  const handleSpanChange = (newSpan) => {
+    setSpan(newSpan);
+  };
+
+  const isLocked = (tx) => {
+    const freqError = Math.abs(centerFreq - tx.frequencyHz);
+    const bwError = Math.abs(bandwidthHz - tx.widthHz);
+    const freqTolerance = tx.widthHz * 0.5;
+    const bwTolerance = tx.widthHz * 0.3;
+    const freqOk = freqError <= freqTolerance;
+    const bwOk = bwError <= bwTolerance;
+    const minOk = minDb <= tx.minDb + 5;
+    const maxOk = maxDb >= tx.maxDb - 5;
+    return freqOk && bwOk && minOk && maxOk;
+  };
+
+  const [span, setSpan] = useState(10_000_000);
 
   if (!operationStarted) {
     return (
-      <div className="relative min-h-screen bg-slate-950 overflow-hidden">
-        <StarBackground className="absolute inset-0" />
-        <div className="relative z-10 flex items-center justify-center min-h-screen px-6">
-          <div className="bg-slate-900/90 border border-slate-800 rounded-[32px] max-w-3xl w-full p-12 text-center space-y-8 shadow-2xl shadow-black/70">
-            <div className="space-y-4">
-              <div className="w-16 h-16 mx-auto rounded-full bg-orange-500/20 border border-orange-400 flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-8 h-8 text-orange-400 fill-current">
-                  <path d="M12 4a1 1 0 0 1 1 1v2.764a4 4 0 1 1-2 0V5a1 1 0 0 1 1-1zm6.364.636a1 1 0 0 1 0 1.414 11 11 0 0 1 0 15.556 1 1 0 1 1-1.414-1.414 9 9 0 0 0 0-12.728 1 1 0 0 1 1.414-1.414zM5.636 4.636a1 1 0 0 1 1.414 1.414 9 9 0 0 0 0 12.728 1 1 0 1 1-1.414 1.414 11 11 0 0 1 0-15.556 1 1 0 0 1 0-1.414z" />
-                </svg>
-              </div>
-              <p className="text-sm uppercase tracking-[0.4em] text-slate-500">Spectrum Uplink</p>
-              <h1 className="text-4xl md:text-5xl font-black text-white">UPLINK ESTABLISHED</h1>
-              <p className="text-slate-300 text-lg">Awaiting mission initialization...</p>
-              <div className="flex items-center justify-center gap-2 text-sm text-slate-400">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>Connected to Mission Control</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-left">
-              <div>
-                <p className="text-xs uppercase text-slate-500">Role</p>
-                <p className="text-2xl font-bold text-white mt-1">Space Ops - EW</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase text-slate-500">Cipher</p>
-                <p className="text-2xl font-mono font-black text-red-500 mt-1">{operationId}</p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => navigate('/')}
-              className="w-full py-3 rounded-xl bg-red-600 text-white font-bold text-sm tracking-wide hover:bg-red-500"
-            >
-              TERMINATE SESSION
-            </button>
-          </div>
+      <div className="relative min-h-screen bg-slate-950 text-white flex items-center justify-center">
+        <StarBackground />
+        <div className="relative z-10 text-center">
+          <h1 className="text-3xl font-bold mb-2">Waiting for operation to start...</h1>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative h-screen bg-[#05070f] overflow-hidden">
-      <StarBackground className="absolute inset-0 opacity-40" />
-      <div className="relative z-10 h-full flex flex-col">
-        <header className="px-6 py-4 bg-gradient-to-r from-slate-950 via-[#080d1a] to-slate-950 border-b border-slate-800 shadow-lg shadow-black/50 flex items-center justify-between">
-          <div className="flex items-center gap-4 text-slate-300">
-            <div className="bg-blue-600/20 border border-blue-400/40 text-blue-200 rounded px-3 py-1 text-xs uppercase tracking-[0.3em]">EW</div>
-            <div>
-              <p className="text-[11px] uppercase text-slate-500">Electronic Warfare Operations</p>
-              <h1 className="text-xl font-black text-white">Space Ops Console</h1>
-            </div>
-          </div>
-          <div className="flex items-center gap-8 text-right">
-            <div>
-              <p className="text-[11px] uppercase text-slate-500">Center Frequency</p>
-              <div className="flex items-center gap-1">
-                {centerField.split('').map((char, idx) => (
-                  char === '.' ? (
-                    <span key={idx} className="text-3xl font-mono font-black text-blue-200">.</span>
-                  ) : (
-                    <input
-                      key={idx}
-                      type="text"
-                      maxLength={1}
-                      value={char}
-                      onChange={(e) => {
-                        const newVal = e.target.value;
-                        if (!/^[0-9]$/.test(newVal) && newVal !== '') return;
-                        const arr = centerField.split('');
-                        arr[idx] = newVal || '0';
-                        const newFreq = arr.join('');
-                        setCenterField(newFreq);
-                        const parsed = parseFloat(newFreq);
-                        if (!Number.isNaN(parsed)) {
-                          handleCenterFreq(Math.round(parsed * 1_000_000));
-                        }
-                      }}
-                      className="w-7 h-10 text-center text-3xl font-mono font-black text-blue-200 bg-slate-800/50 border border-slate-700 rounded focus:outline-none focus:border-blue-400"
-                    />
-                  )
-                ))}
-                <span className="text-base font-semibold text-blue-200 ml-2">MHz</span>
+    <div className="relative min-h-screen bg-slate-950 text-white flex flex-col">
+      <StarBackground />
+
+      <div className="relative z-10 flex flex-col h-screen">
+        <header className="bg-[#0a0f1e] border-b border-slate-800 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              <div className="px-3 py-1.5 rounded border border-blue-500 bg-blue-500/10">
+                <span className="text-sm font-bold text-blue-200">E W</span>
               </div>
+              <h1 className="text-xl font-bold text-slate-100">Space Ops Console</h1>
+              <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Electronic Warfare Operations</p>
             </div>
-            <div>
-              <p className="text-[11px] uppercase text-slate-500">Span</p>
-              <p className="text-lg font-mono text-slate-200">{(span / 1_000_000).toFixed(2)} MHz</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase text-slate-500">Mission Timer</p>
-              <p className="text-2xl font-mono font-black text-blue-200">
-                {String(Math.floor((timeLeft || 0) / 60)).padStart(2, '0')}:
-                {String((timeLeft || 0) % 60).padStart(2, '0')}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase text-slate-500">Operation ID</p>
-              <p className="text-lg font-mono text-slate-200">{operationId}</p>
+            <div className="flex items-center gap-6 text-right">
+              <div>
+                <p className="text-[11px] uppercase text-slate-500">Center Frequency</p>
+                <p className="text-3xl font-mono font-black text-blue-200">{formatFreq(centerFreq)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase text-slate-500">Bandwidth</p>
+                <p className="text-lg font-mono text-slate-200">{formatFreq(bandwidthHz)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase text-slate-500">Mission Timer</p>
+                <p className="text-2xl font-mono font-black text-blue-200">
+                  {String(Math.floor((timeLeft || 0) / 60)).padStart(2, '0')}:
+                  {String((timeLeft || 0) % 60).padStart(2, '0')}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase text-slate-500">Operation ID</p>
+                <p className="text-lg font-mono text-slate-200">{operationId}</p>
+              </div>
             </div>
           </div>
         </header>
 
         <div className="flex-1 flex">
           <aside className="w-72 bg-[#0c111f] border-r border-slate-900 px-4 py-6 flex flex-col gap-6">
-            <div className="bg-[#090d17] border border-slate-800 rounded-lg p-4 shadow-inner shadow-black/40">
-              <p className="text-[11px] uppercase text-slate-500 mb-3">Band Controls</p>
+            <div className="bg-[#090d17] border border-slate-800 rounded-lg p-4">
+              <p className="text-[11px] uppercase text-slate-500 mb-3">Tuning Controls</p>
               <div className="space-y-4">
                 <div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Center</span>
-                    <span className="font-mono text-slate-200">{formatFrequency(centerFreq)}</span>
+                  <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                    <span>Center Frequency</span>
+                    <span className="font-mono text-slate-200">{formatFreq(centerFreq)}</span>
                   </div>
                   <input
                     type="range"
                     min={80_000_000}
                     max={130_000_000}
+                    step={10_000}
                     value={centerFreq}
-                    onChange={(event) => handleCenterFreq(Number(event.target.value))}
+                    onChange={(e) => setCenterFreq(Number(e.target.value))}
                     className="w-full accent-slate-200"
                   />
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={centerField}
-                      onChange={(event) => setCenterField(event.target.value)}
-                      onBlur={commitCenterField}
-                      onKeyDown={(event) => { if (event.key === 'Enter') commitCenterField(); }}
-                      step={0.001}
-                      className="w-full rounded bg-[#0f1424] border border-slate-800 px-2 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-blue-400"
-                    />
-                    <span className="text-[11px] text-slate-500">MHz</span>
-                  </div>
                 </div>
                 <div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Zoom</span>
-                    <span className="font-mono text-slate-200">{(span / 1_000_000).toFixed(2)} MHz span</span>
+                  <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                    <span>Bandwidth</span>
+                    <span className="font-mono text-slate-200">{formatFreq(bandwidthHz)}</span>
                   </div>
                   <input
                     type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={zoomLevel}
-                    onChange={(event) => handleZoomLevel(Number(event.target.value))}
+                    min={50_000}
+                    max={500_000}
+                    step={10_000}
+                    value={bandwidthHz}
+                    onChange={(e) => setBandwidthHz(Number(e.target.value))}
                     className="w-full accent-slate-200"
                   />
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={spanField}
-                      onChange={(event) => setSpanField(event.target.value)}
-                      onBlur={commitSpanField}
-                      onKeyDown={(event) => { if (event.key === 'Enter') commitSpanField(); }}
-                      step={0.01}
-                      className="w-full rounded bg-[#0f1424] border border-slate-800 px-2 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-blue-400"
-                    />
-                    <span className="text-[11px] text-slate-500">MHz</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Noise Floor</span>
-                    <span className="font-mono text-slate-200">{noiseFloor.toFixed(0)} dB</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={-140}
-                    max={-60}
-                    value={noiseFloor}
-                    onChange={(event) => handleNoiseFloor(Number(event.target.value))}
-                    className="w-full accent-slate-200"
-                  />
-                </div>
-              </div>
-              <div className="mt-6 pt-4 border-t border-slate-800">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[11px] uppercase text-slate-500">Display Range</p>
-                  <button
-                    type="button"
-                    onClick={resetDisplayRange}
-                    className="text-[10px] uppercase tracking-wide text-blue-300 hover:text-blue-100"
-                  >
-                    {rangeLocked ? 'Reset' : 'Auto'}
-                  </button>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                      <span>Min</span>
-                      <span className="font-mono text-slate-200">{displayMin.toFixed(0)} dB</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={-140}
-                      max={displayMax - 2}
-                      value={displayMin}
-                      onChange={(event) => handleDisplayMinChange(Number(event.target.value))}
-                      className="w-full accent-slate-200"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                      <span>Max</span>
-                      <span className="font-mono text-slate-200">{displayMax.toFixed(0)} dB</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={displayMin + 2}
-                      max={0}
-                      value={displayMax}
-                      onChange={(event) => handleDisplayMaxChange(Number(event.target.value))}
-                      className="w-full accent-slate-200"
-                    />
-                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="bg-[#090d17] border border-slate-800 rounded-lg p-4 shadow-inner shadow-black/40">
-              <p className="text-[11px] uppercase text-slate-500 mb-3">Spectrum Control</p>
+            <div className="bg-[#090d17] border border-slate-800 rounded-lg p-4">
+              <p className="text-[11px] uppercase text-slate-500 mb-3">Display Range</p>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                    <span>Min</span>
+                    <span className="font-mono text-slate-200">{minDb} dB</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-140}
+                    max={-20}
+                    value={minDb}
+                    onChange={(e) => setMinDb(Number(e.target.value))}
+                    className="w-full accent-slate-200"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                    <span>Max</span>
+                    <span className="font-mono text-slate-200">{maxDb} dB</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-100}
+                    max={0}
+                    value={maxDb}
+                    onChange={(e) => setMaxDb(Number(e.target.value))}
+                    className="w-full accent-slate-200"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#090d17] border border-slate-800 rounded-lg p-4">
+              <p className="text-[11px] uppercase text-slate-500 mb-3">Audio Control</p>
               {!audioReady ? (
                 <button
                   onClick={handleEnableAudio}
-                  className="w-full py-2.5 rounded border border-blue-400/60 text-blue-200 bg-blue-500/10 hover:bg-blue-500/20 text-sm font-semibold tracking-wide transition flex items-center justify-center gap-2"
+                  className="w-full py-2.5 rounded border border-blue-400/60 text-blue-200 bg-blue-500/10 hover:bg-blue-500/20 text-sm font-semibold"
                 >
                   Enable Audio
                 </button>
               ) : (
                 <button
                   onClick={handlePlayPause}
-                  className={`w-full py-2.5 rounded border text-sm font-semibold tracking-wide transition flex items-center justify-center gap-2 ${
+                  className={`w-full py-2.5 rounded border text-sm font-semibold ${
                     isPaused
                       ? 'border-emerald-400/60 text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20'
                       : 'border-amber-400/60 text-amber-200 bg-amber-500/10 hover:bg-amber-500/20'
@@ -671,7 +272,7 @@ export default function SdrAdminPanel({ operationId }) {
                 </button>
               )}
               <div className="mt-4">
-                <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                <div className="flex justify-between text-[11px] text-slate-400 mb-1">
                   <span>Volume</span>
                   <span className="font-mono text-slate-200">{Math.round(volume * 100)}%</span>
                 </div>
@@ -681,79 +282,72 @@ export default function SdrAdminPanel({ operationId }) {
                   max={1}
                   step={0.01}
                   value={volume}
-                  onChange={(event) => setVolume(Number(event.target.value))}
+                  onChange={(e) => setVolume(Number(e.target.value))}
                   className="w-full accent-slate-200"
                 />
               </div>
-              {audioError && (
-                <p className="text-[10px] text-red-400 mt-2 leading-tight">{audioError}</p>
-              )}
-              {!audioReady && !audioError && (
-                <p className="text-[10px] text-slate-500 mt-2 leading-tight">Browser audio may require a click before playback starts.</p>
-              )}
-            </div>
-
-            <div className="bg-[#090d17] border border-slate-800 rounded-lg p-4 shadow-inner shadow-black/40 text-[11px] text-slate-500">
-              <p>
-                Signals tracked: <span className="text-slate-200 font-semibold">{signals.length}</span>
-              </p>
-              <p className="mt-1">Firestore sync active.</p>
             </div>
           </aside>
 
           <main className="flex-1 bg-[#04060c] p-6 flex flex-col gap-4">
-            <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl shadow-black/50 p-4 flex flex-col gap-3">
+            <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl p-4 flex flex-col gap-3">
               <div className="flex items-center justify-between text-slate-300 text-sm">
                 <span className="font-semibold">Spectrum Display</span>
                 <span className="font-mono text-xs text-blue-200">
-                  {formatFrequency(centerFreq)} ± {(span / 2_000_000).toFixed(2)} MHz
+                  {formatFreq(centerFreq)} ± {(span / 2_000_000).toFixed(2)} MHz
                 </span>
               </div>
               <SpectrumCanvas
-                fftData={isPaused ? [] : fftData}
                 centerFreq={centerFreq}
                 span={span}
-                onChangeCenterFreq={handleCenterFreq}
-                onChangeSpan={handleSpan}
+                minDb={minDb}
+                maxDb={maxDb}
+                bandwidthHz={bandwidthHz}
+                transmissions={transmissions}
                 height={220}
-                noiseFloor={noiseFloor}
-                minDb={displayMin}
-                maxDb={displayMax}
+                onChangeCenterFreq={handleCenterChange}
+                onChangeSpan={handleSpanChange}
               />
-              {!audioReady && (
-                <p className="text-[11px] text-amber-300 uppercase tracking-[0.3em]">Audio muted -- click Enable Audio to monitor broadcasts</p>
-              )}
               <WaterfallCanvas
-                fftData={isPaused ? [] : fftData}
+                centerFreq={centerFreq}
+                span={span}
+                transmissions={transmissions}
                 height={380}
-                minDb={displayMin}
-                maxDb={displayMax}
               />
             </div>
 
-            <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl shadow-black/50 p-4 flex-1 overflow-hidden">
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-3">
-                <span className="font-semibold text-slate-200 uppercase tracking-[0.3em] text-[10px]">Active Signals</span>
-                <span className="font-mono text-blue-200 text-sm">{signals.length ? 'ONLINE' : 'IDLE'}</span>
+            <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-semibold text-slate-200 uppercase tracking-[0.3em] text-[10px]">
+                  Active Signals
+                </span>
+                <span className="font-mono text-blue-200 text-sm">
+                  {transmissions.filter(isLocked).length} / {transmissions.length} LOCKED
+                </span>
               </div>
-              <div className="h-full overflow-y-auto pr-2 space-y-2">
-                {signals.length === 0 && (
-                  <div className="text-sm text-slate-500">No active transmissions.</div>
-                )}
-                {signals.map((signal) => {
-                  const profile = signal.audioId ? transmissionMap.get(signal.audioId) : null;
+              <div className="space-y-2">
+                {transmissions.map((tx) => {
+                  const locked = isLocked(tx);
+                  const freqOff = Math.abs(centerFreq - tx.frequencyHz);
                   return (
                     <div
-                      key={signal.id}
-                      className="flex items-center justify-between bg-[#070b16] border border-slate-800 rounded-lg px-3 py-2"
+                      key={tx.id}
+                      className={`flex items-center justify-between p-3 rounded-lg border ${
+                        locked
+                          ? 'bg-emerald-500/10 border-emerald-500/50'
+                          : 'bg-[#070b16] border-slate-800'
+                      }`}
                     >
                       <div>
-                        <p className="text-white text-sm font-semibold">{profile?.name || signal.label || signal.type}</p>
-                        <p className="text-[11px] text-slate-400">{formatFrequency(signal.freq)}</p>
+                        <p className="text-white text-sm font-semibold">{tx.name}</p>
+                        <p className="text-[11px] text-slate-400 mt-1">{tx.description}</p>
+                        <p className="text-[10px] uppercase tracking-[0.2em] mt-2 text-slate-500">
+                          {locked ? '✅ LOCKED' : `⚠ DETUNE ${formatFreq(freqOff)}`}
+                        </p>
                       </div>
                       <div className="text-right text-[11px] text-slate-400">
-                        <p>{signal.power?.toFixed ? signal.power.toFixed(0) : signal.power} dB</p>
-                        <p>{(signal.width / 1_000).toFixed(0)} kHz</p>
+                        <p>{formatFreq(tx.frequencyHz)}</p>
+                        <p>{formatFreq(tx.widthHz)} width</p>
                       </div>
                     </div>
                   );
@@ -763,15 +357,6 @@ export default function SdrAdminPanel({ operationId }) {
           </main>
         </div>
       </div>
-
-      {loading && (
-        <div className="absolute inset-0 bg-slate-950/80 flex items-center justify-center text-white">
-          <div className="text-center space-y-3">
-            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-sm uppercase tracking-widest text-slate-400">Linking Spectrum Nodes...</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
