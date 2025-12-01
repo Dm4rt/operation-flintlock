@@ -5,6 +5,9 @@ import useSession from "../hooks/useSession";
 import useCountdown from "../hooks/useCountdown";
 import SdaDashboard from "../components/sda/SdaDashboard";
 import SdrAdminPanel from "../components/sdr/SdrAdminPanel";
+import CyberTerminal from "../components/cyber/CyberTerminal";
+import IntelDashboard from "../components/intel/IntelDashboard";
+import CommandDashboard from "../components/cmd/CommandDashboard";
 
 export default function UserDashboard() {
   const { teamId, code } = useParams();
@@ -55,6 +58,18 @@ export default function UserDashboard() {
 
     if (teamId === 'ew') {
       return <SdrAdminPanel operationId={code} />;
+    }
+
+    if (teamId === 'cyber') {
+      return <CyberTerminal operationId={code} />;
+    }
+
+    if (teamId === 'intel') {
+      return <IntelDashboard operationId={code} />;
+    }
+
+    if (teamId === 'mission_cmd') {
+      return <CommandDashboard operationId={code} />;
     }
 
     // Other teams get placeholder interface (to be built later)
