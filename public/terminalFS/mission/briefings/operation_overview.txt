@@ -1,0 +1,31 @@
+OPERATION FLINTLOCK - MISSION BRIEFING
+======================================
+
+CLASSIFICATION: TOP SECRET
+
+OBJECTIVE:
+Monitor and analyze space-based communications for anomalous activity.
+Identify potential threats to US satellite infrastructure.
+
+RULES OF ENGAGEMENT:
+1. Maintain OPSEC at all times
+2. Report all anomalies immediately
+3. Do not engage without authorization
+
+TIMELINE:
+Start: 0600 Zulu
+Duration: 72 hours
+
+RESOURCES:
+- SDR equipment on frequency 145.800 MHz
+- Satellite tracking suite
+- Secure communications channel
+
+EXPECTED THREATS:
+- Signal jamming attempts
+- Unauthorized satellite maneuvers
+- Electronic warfare tactics
+
+Stay vigilant. Lives depend on your performance.
+
+//END BRIEFING//

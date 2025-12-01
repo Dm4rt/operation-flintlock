@@ -1,0 +1,32 @@
+{
+  "files": [
+    {
+      "path": "home/cadet/notes.txt",
+      "type": "text"
+    },
+    {
+      "path": "home/cadet/clue1.txt",
+      "type": "text"
+    },
+    {
+      "path": "mission/briefings/operation_overview.txt",
+      "type": "text"
+    },
+    {
+      "path": "mission/inbox/encrypted.dat",
+      "type": "text"
+    },
+    {
+      "path": "logs/system.log",
+      "type": "text"
+    },
+    {
+      "path": "logs/network.log",
+      "type": "text"
+    },
+    {
+      "path": "tools/README.txt",
+      "type": "text"
+    }
+  ]
+}

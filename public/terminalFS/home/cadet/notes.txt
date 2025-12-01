@@ -1,0 +1,14 @@
+CADET TRAINING NOTES
+==================
+
+Day 1: Introduction to Space Operations
+- Familiarized with terminal commands
+- Reviewed communication protocols
+- Briefed on OPSEC procedures
+
+Day 2: Satellite Operations
+- Studied orbital mechanics
+- Practiced satellite maneuvering
+- Learned threat identification
+
+REMEMBER: Check mission briefings daily
