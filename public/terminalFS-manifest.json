@@ -9,7 +9,15 @@
       "type": "text"
     },
     {
+      "path": "home/cadet/flint-secret-key.txt",
+      "type": "text"
+    },
+    {
       "path": "mission/briefings/operation_overview.txt",
+      "type": "text"
+    },
+    {
+      "path": "mission/briefings/flint-classified.txt",
       "type": "text"
     },
     {

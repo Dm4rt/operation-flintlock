@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import SdaOrbitViewer from './SdaOrbitViewer';
 import SdaSatellitePanel from './SdaSatellitePanel';
 import SdaManeuverPlanner from './SdaManeuverPlanner';
@@ -31,6 +31,15 @@ export default function SdaDashboard({ sessionCode }) {
       message: 'SDA System Online - 4 satellites tracked'
     }
   ]);
+
+  // Helper function to add inject messages
+  const addInject = React.useCallback((inject) => {
+    setInjects(prev => [{
+      id: Date.now(),
+      timestamp: new Date(),
+      ...inject
+    }, ...prev]);
+  }, []);
 
   // Register team presence
   useEffect(() => {
@@ -151,6 +160,112 @@ export default function SdaDashboard({ sessionCode }) {
     return () => clearInterval(interval);
   }, []);
 
+  // Listen for Intel snapshot requests via Firestore
+  useEffect(() => {
+    if (!sessionCode) return;
+    
+    console.log('[SDA] Setting up Firestore Intel snapshot listener, satellite:', selectedSatellite?.id);
+    
+    const intelDocRef = doc(db, 'sessions', sessionCode, 'intel', 'satImagery');
+    
+    const unsubscribe = onSnapshot(intelDocRef, async (docSnap) => {
+      if (!docSnap.exists()) return;
+      
+      const data = docSnap.data();
+      
+      // Check if there's a pending request
+      if (!data.requestPending) return;
+      
+      console.log('[SDA] *** Intel snapshot request detected in Firestore ***');
+      
+      if (!selectedSatellite) {
+        console.warn('[SDA] No satellite selected for snapshot');
+        addInject({
+          type: 'warning',
+          message: 'Intel requested imagery but no ISR satellite selected'
+        });
+        
+        // Clear the request flag
+        await setDoc(intelDocRef, { requestPending: false }, { merge: true });
+        return;
+      }
+
+      // Only send snapshot for ISR satellites (sentinel-7)
+      if (!selectedSatellite.id.includes('sentinel')) {
+        console.warn('[SDA] Selected satellite is not ISR type:', selectedSatellite.id);
+        addInject({
+          type: 'warning',
+          message: `Intel requested imagery but ${selectedSatellite.id} is not an ISR satellite`
+        });
+        
+        // Clear the request flag
+        await setDoc(intelDocRef, { requestPending: false }, { merge: true });
+        return;
+      }
+
+      try {
+        // Get current position from TLE propagation
+        const position = selectedSatellite.currentPosition;
+        
+        console.log('[SDA] Current position:', position);
+        
+        if (!position) {
+          console.error('[SDA] No position available for satellite');
+          addInject({
+            type: 'error',
+            message: 'No position data available for satellite'
+          });
+          
+          // Clear the request flag
+          await setDoc(intelDocRef, { requestPending: false }, { merge: true });
+          return;
+        }
+
+        // Position already has lat, lon, alt from propagateSatellite utility
+        const { lat, lon, alt } = position;
+        
+        console.log('[SDA] Extracted coordinates:', { lat, lon, alt });
+        
+        // Push snapshot to Firestore
+        const snapshotData = {
+          satId: selectedSatellite.id,
+          lat,
+          lon,
+          altKm: alt,
+          timestamp: new Date().toISOString(),
+          requestPending: false // Clear the request flag
+        };
+        
+        console.log('[SDA] Writing to Firestore:', `sessions/${sessionCode}/intel/satImagery`);
+        
+        await setDoc(intelDocRef, snapshotData, { merge: true });
+        
+        console.log('[SDA] ✅ Snapshot pushed to Firestore:', snapshotData);
+        
+        addInject({
+          type: 'success',
+          message: `Intel snapshot sent: ${selectedSatellite.id} at (${lat.toFixed(2)}°, ${lon.toFixed(2)}°)`
+        });
+      } catch (error) {
+        console.error('[SDA] ❌ Failed to send snapshot:', error);
+        addInject({
+          type: 'error',
+          message: `Snapshot failed: ${error.message}`
+        });
+        
+        // Clear the request flag even on error
+        await setDoc(intelDocRef, { requestPending: false }, { merge: true });
+      }
+    });
+    
+    console.log('[SDA] Firestore listener attached for Intel requests');
+    
+    return () => {
+      console.log('[SDA] Removing Firestore Intel snapshot listener');
+      unsubscribe();
+    };
+  }, [sessionCode, selectedSatellite, addInject]);
+
   // Handle maneuver planning (allows stacking multiple maneuvers)
   const handlePlanManeuver = (maneuverType) => {
     try {
@@ -240,14 +355,6 @@ export default function SdaDashboard({ sessionCode }) {
   // Cancel the planned maneuver
   const handleCancelManeuver = () => {
     setPlannedManeuver(null);
-  };
-
-  const addInject = (inject) => {
-    setInjects(prev => [{
-      id: Date.now(),
-      timestamp: new Date(),
-      ...inject
-    }, ...prev]);
   };
 
   return (

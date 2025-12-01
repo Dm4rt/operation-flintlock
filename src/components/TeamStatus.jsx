@@ -6,13 +6,10 @@ import useSession from "../hooks/useSession";
 export default function TeamStatus({ sessionId }) {
     const { participants } = useSession(sessionId);
 
-    const onlineSet = new Set(participants.map(p => p.teamId));
-
-    // Debug log
-    React.useEffect(() => {
-        console.log('TeamStatus participants:', participants);
-        console.log('TeamStatus onlineSet:', Array.from(onlineSet));
-    }, [participants, onlineSet]);
+    const onlineSet = React.useMemo(() => 
+        new Set(participants.map(p => p.teamId)), 
+        [participants]
+    );
 
     return (
         <div className="bg-slate-950 rounded-xl border border-slate-800 p-6">

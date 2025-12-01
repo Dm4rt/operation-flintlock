@@ -37,7 +37,6 @@ export default function useSession(sessionId) {
     const unsub = onCollectionSnapshot(q, (snap) => {
       const arr = [];
       snap.forEach(d => arr.push({ id: d.id, ...d.data() }));
-      console.log(`📡 Participants snapshot for ${sessionId}:`, arr);
       setParticipants(arr);
     }, (error) => {
       console.error(`❌ Participants listener error:`, error);
@@ -48,14 +47,12 @@ export default function useSession(sessionId) {
   const join = useCallback(async (teamId, props = {}) => {
     if (!sessionId) throw new Error('no session id');
     const ref = doc(db, 'sessions', sessionId, 'participants', teamId);
-    console.log(`🔵 Attempting to join session ${sessionId} as team ${teamId}`);
     try {
       await setDoc(ref, {
         teamId,
         ...props,
         joinedAt: serverTimestamp()
       });
-      console.log(`✅ Successfully wrote to Firestore: sessions/${sessionId}/participants/${teamId}`);
     } catch (error) {
       console.error(`❌ Failed to join session:`, error);
       throw error;

@@ -1,25 +1,57 @@
 /**
  * Virtual Filesystem Engine
  * Manages a JSON-based filesystem structure in memory
- * Extended to support real filesystem data and visibility filtering
+ * Extended to support real filesystem data and .flint hidden files
  */
 
-import { isVisible, filterVisibleChildren } from './visibility.js';
-
 export class VirtualFS {
-  constructor(fsData, useRealFS = false) {
+  constructor(fsData, useRealFS = false, visibilityMap = {}) {
     // Support both old JSON format and new real filesystem format
     if (useRealFS) {
       // fsData is the root node from fsLoader
       this.root = fsData;
       this.useRealFS = true;
       this.currentPath = '/';  // Start at root for real filesystem
+      this.visibilityMap = visibilityMap;
+      
+      // Apply visibility map to .flint files
+      this.applyVisibilityMap(this.root);
     } else {
       // Legacy JSON format
       this.root = fsData['/'];
       this.useRealFS = false;
       this.currentPath = '/home/cyber';
+      this.visibilityMap = {};
     }
+  }
+
+  /**
+   * Apply Firestore visibility map to flint- prefixed files in the tree
+   */
+  applyVisibilityMap(node, parentPath = '') {
+    if (node.type === 'dir' && node.children) {
+      for (const [childName, childNode] of Object.entries(node.children)) {
+        this.applyVisibilityMap(childNode, node.path || parentPath);
+      }
+    } else if (node.type === 'file' && node.hiddenPrefix) {
+      // Update visibility for flint- prefixed files based on Firestore
+      // Use filename (not full path) as the key
+      const wasVisible = node.visible;
+      node.visible = this.visibilityMap[node.name] === true;
+      
+      if (wasVisible !== node.visible) {
+        console.log(`[FS] File visibility changed: ${node.name} = ${node.visible} (path: ${node.path})`);
+      }
+    }
+  }
+
+  /**
+   * Update visibility map (called when Firestore changes)
+   */
+  updateVisibility(newVisibilityMap) {
+    console.log('[FS] Updating visibility map:', newVisibilityMap);
+    this.visibilityMap = newVisibilityMap;
+    this.applyVisibilityMap(this.root);
   }
 
   /**
@@ -56,18 +88,10 @@ export class VirtualFS {
 
   /**
    * Get a node (file or directory) at the given path
-   * Respects visibility rules when using real filesystem
+   * Respects flint- prefix visibility
    */
   getNode(path, checkVisibility = true) {
     const normalized = this.normalizePath(path);
-    
-    // Check visibility for real filesystem
-    if (this.useRealFS && checkVisibility) {
-      const relativePath = normalized.replace(/^\//, '');
-      if (relativePath && !isVisible(relativePath)) {
-        return null;
-      }
-    }
     
     if (normalized === '/') {
       return this.root;
@@ -77,10 +101,22 @@ export class VirtualFS {
     let current = this.root;
 
     for (const part of parts) {
-      if (!current || current.type !== 'dir' || !current.children || !current.children[part]) {
+      if (!current || current.type !== 'dir' || !current.children) {
         return null;
       }
-      current = current.children[part];
+
+      const child = current.children[part];
+
+      if (!child) {
+        return null;
+      }
+
+      // Check visibility for flint- prefixed files
+      if (checkVisibility && child.hiddenPrefix && !child.visible) {
+        return null;
+      }
+
+      current = child;
     }
 
     return current;
@@ -111,7 +147,7 @@ export class VirtualFS {
 
   /**
    * List contents of a directory
-   * Filters results based on visibility when using real filesystem
+   * Only shows visible files (non-prefixed or visible flint- files)
    */
   list(path = '.') {
     const node = this.getNode(path);
@@ -125,15 +161,19 @@ export class VirtualFS {
     }
 
     const children = node.children || {};
-    
-    // Filter by visibility for real filesystem
-    if (this.useRealFS) {
-      const normalizedPath = this.normalizePath(path).replace(/^\//, '');
-      const visibleChildren = filterVisibleChildren(children, normalizedPath);
-      return Object.keys(visibleChildren);
+    const names = [];
+
+    for (const [childName, childNode] of Object.entries(children)) {
+      // Skip hidden flint- prefixed files
+      if (childNode.hiddenPrefix && !childNode.visible) {
+        continue;
+      }
+      
+      // Use full filename including "flint-" prefix when visible
+      names.push(childNode.name);
     }
 
-    return Object.keys(children);
+    return names;
   }
 
   /**
@@ -194,7 +234,7 @@ export class VirtualFS {
 
   /**
    * Get detailed info about directory contents
-   * Filters results based on visibility when using real filesystem
+   * Only includes visible files
    */
   listDetailed(path = '.') {
     const node = this.getNode(path);
@@ -208,17 +248,16 @@ export class VirtualFS {
     }
 
     const entries = [];
-    let children = node.children || {};
+    const children = node.children || {};
 
-    // Filter by visibility for real filesystem
-    if (this.useRealFS) {
-      const normalizedPath = this.normalizePath(path).replace(/^\//, '');
-      children = filterVisibleChildren(children, normalizedPath);
-    }
+    for (const [childName, child] of Object.entries(children)) {
+      // Skip hidden flint- prefixed files
+      if (child.hiddenPrefix && !child.visible) {
+        continue;
+      }
 
-    for (const [name, child] of Object.entries(children)) {
       entries.push({
-        name,
+        name: child.name,  // Use full filename including prefix
         type: child.type,
         isDir: child.type === 'dir',
         fileType: child.fileType || null

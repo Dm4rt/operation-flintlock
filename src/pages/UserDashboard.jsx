@@ -61,7 +61,7 @@ export default function UserDashboard() {
     }
 
     if (teamId === 'cyber') {
-      return <CyberTerminal operationId={code} />;
+      return <CyberTerminal operationId={code} sessionId={code} />;
     }
 
     if (teamId === 'intel') {

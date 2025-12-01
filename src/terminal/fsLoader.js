@@ -1,15 +1,17 @@
 /**
  * Filesystem Loader
  * Fetches the filesystem.json manifest and loads file contents from /public/terminalFS
- * Vite doesn't allow import.meta.glob from /public, so we use fetch at runtime
+ * Supports prefix-based hidden files (flint-*)
  */
+
+import { isFlintFile } from './flintVisibility.js';
 
 /**
  * Load all files from the terminalFS directory
  * @returns {Promise<Object>} Virtual filesystem tree
  */
 export async function loadFilesystem() {
-  // Fetch the filesystem manifest (we'll create this)
+  // Fetch the filesystem manifest
   const response = await fetch('/terminalFS-manifest.json');
   const manifest = await response.json();
 
@@ -39,10 +41,6 @@ export async function loadFilesystem() {
       addFileToTree(root, file.path, url, 'image');
     }
   }
-
-  // Ensure home/cyber exists even if no files there yet
-  ensureDirectory(root, 'home');
-  ensureDirectory(root, 'home/cyber');
 
   console.log('Final filesystem structure:', root);
 
@@ -85,6 +83,9 @@ function addFileToTree(root, relativePath, content, fileType) {
   const parts = relativePath.split('/');
   const fileName = parts.pop();
 
+  // Check if this is a hidden file (starts with "flint-")
+  const hiddenPrefix = isFlintFile(fileName);
+
   // Navigate/create directory structure
   let current = root;
   let currentPath = '';
@@ -103,15 +104,17 @@ function addFileToTree(root, relativePath, content, fileType) {
     current = current.children[part];
   }
 
-  // Add the file
+  // Add the file with prefix-based metadata
   const filePath = currentPath ? `${currentPath}/${fileName}` : fileName;
   current.children[fileName] = {
     type: 'file',
-    name: fileName,
-    path: filePath,
+    name: fileName,              // Full filename including "flint-" prefix
+    path: filePath,              // Full path
     content: fileType === 'text' ? content : null,
     url: fileType === 'image' ? content : null,
-    fileType
+    fileType,
+    hiddenPrefix: hiddenPrefix,  // true if filename starts with "flint-"
+    visible: !hiddenPrefix       // Non-prefixed files always visible, prefixed files hidden by default
   };
 }
 

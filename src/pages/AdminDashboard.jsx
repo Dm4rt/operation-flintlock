@@ -8,6 +8,8 @@ import useCountdown from "../hooks/useCountdown";
 import { useNavigate } from "react-router-dom";
 import { db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { initializeFlintFiles } from "../terminal/initFlintFiles";
+import FlintFileAdmin from "../components/cmd/FlintFileAdmin";
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -60,10 +62,20 @@ export default function AdminDashboard() {
     })();
   };
 
-  const initializeOperation = () => {
+  const initializeOperation = async () => {
     if (!scenarioId) return;
+    
     setIsRunning(true);
     addLog(`Operation ${scenarioId} STARTED`);
+    
+    // Initialize all flint- files in Firestore with visible: false
+    try {
+      await initializeFlintFiles(scenarioId);
+      addLog(`Flint files initialized for ${scenarioId}`);
+    } catch (err) {
+      console.error('Failed to initialize flint files:', err);
+      addLog(`Warning: Flint file initialization failed`);
+    }
   };
 
   // Automatically stop locally when synced timer reaches zero
@@ -210,6 +222,9 @@ export default function AdminDashboard() {
           <InjectFeed scenarioId={scenarioId} className="min-h-[420px]" />
 
           <SystemLog logs={logs} />
+
+          {/* Flint File Control Panel */}
+          <FlintFileAdmin sessionId={scenarioId} />
         </div>
       </div>
 

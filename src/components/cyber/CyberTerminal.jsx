@@ -3,8 +3,9 @@ import StarBackground from '../StarBackground';
 import { VirtualFS } from '../../terminal/fs';
 import { CommandParser } from '../../terminal/parser';
 import { loadFilesystem } from '../../terminal/fsLoader';
+import { subscribeToFlintVisibility } from '../../terminal/flintVisibility';
 
-export default function CyberTerminal({ operationId }) {
+export default function CyberTerminal({ operationId, sessionId }) {
   const [lines, setLines] = useState([]);
   const [currentInput, setCurrentInput] = useState('');
   const [commandHistory, setCommandHistory] = useState([]);
@@ -15,20 +16,21 @@ export default function CyberTerminal({ operationId }) {
   
   const terminalRef = useRef(null);
   const inputRef = useRef(null);
+  const fsRootRef = useRef(null);
 
   // Load filesystem from real files
   useEffect(() => {
     const initFilesystem = async () => {
       try {
-        // Load real filesystem using import.meta.glob
+        // Load real filesystem
         const fsRoot = await loadFilesystem();
+        fsRootRef.current = fsRoot;
         
-        // Debug: Log filesystem structure
         console.log('Loaded filesystem root:', fsRoot);
         console.log('Root children:', Object.keys(fsRoot.children));
         
-        // Create VirtualFS with real filesystem data
-        const filesystem = new VirtualFS(fsRoot, true); // true = use real filesystem mode
+        // Create VirtualFS with real filesystem data (no visibility map yet)
+        const filesystem = new VirtualFS(fsRoot, true, {}); // Empty map initially
         const cmdParser = new CommandParser(filesystem);
         
         setFs(filesystem);
@@ -56,6 +58,52 @@ export default function CyberTerminal({ operationId }) {
 
     initFilesystem();
   }, [operationId]);
+
+  // Track previous visibility state to detect changes
+  const prevVisibilityRef = useRef({});
+
+  // Subscribe to Firestore visibility changes for .flint files
+  useEffect(() => {
+    if (!fs || !sessionId) return;
+
+    console.log('Subscribing to .flint visibility for session:', sessionId);
+
+    const unsubscribe = subscribeToFlintVisibility(sessionId, (visibilityMap) => {
+      console.log('.flint visibility updated:', visibilityMap);
+      
+      // Update the filesystem with new visibility
+      fs.updateVisibility(visibilityMap);
+      
+      // Detect newly visible files (compare with previous state)
+      const newlyVisible = Object.entries(visibilityMap)
+        .filter(([filename, visible]) => {
+          const wasVisible = prevVisibilityRef.current[filename];
+          return visible && !wasVisible;
+        })
+        .map(([filename, _]) => filename);
+      
+      // Show notification only for newly revealed files
+      if (newlyVisible.length > 0) {
+        setLines(prev => [
+          ...prev,
+          { type: 'system', text: '' },
+          { type: 'success', text: '✓ File access granted: ' + newlyVisible.join(', ') },
+          { type: 'system', text: '' }
+        ]);
+      }
+      
+      // Update previous state
+      prevVisibilityRef.current = visibilityMap;
+      
+      // Force re-render by updating parser
+      setParser(new CommandParser(fs));
+    });
+
+    return () => {
+      console.log('Unsubscribing from .flint visibility');
+      unsubscribe();
+    };
+  }, [fs, sessionId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
