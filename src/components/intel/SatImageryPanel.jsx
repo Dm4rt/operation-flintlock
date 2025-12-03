@@ -4,7 +4,6 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader } from '@googlemaps/js-api-loader';
 
 export default function SatImageryPanel({ satData, onClose }) {
   const mapRef = useRef(null);
@@ -26,48 +25,108 @@ export default function SatImageryPanel({ satData, onClose }) {
           throw new Error('Google Maps API key not configured');
         }
 
-        const loader = new Loader({
-          apiKey,
-          version: 'weekly',
-          libraries: ['maps']
-        });
+        // Load Google Maps script dynamically (only once)
+        if (!window.google?.maps?.Map) {
+          // Check if script is already being loaded
+          const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+          
+          if (!existingScript) {
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async`;
+            
+            await new Promise((resolve, reject) => {
+              script.onload = () => {
+                // Wait a bit more for the API to fully initialize
+                const checkInit = setInterval(() => {
+                  if (window.google?.maps?.Map) {
+                    clearInterval(checkInit);
+                    resolve();
+                  }
+                }, 50);
+                setTimeout(() => {
+                  clearInterval(checkInit);
+                  resolve();
+                }, 3000);
+              };
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+          } else {
+            // Wait for existing script to fully load Maps API
+            await new Promise((resolve) => {
+              const checkGoogle = setInterval(() => {
+                if (window.google?.maps?.Map) {
+                  clearInterval(checkGoogle);
+                  resolve();
+                }
+              }, 50);
+              // Timeout after 10 seconds
+              setTimeout(() => {
+                clearInterval(checkGoogle);
+                resolve();
+              }, 10000);
+            });
+          }
+        }
 
-        await loader.load();
+        // Final check that google.maps.Map is available
+        if (!window.google?.maps?.Map) {
+          throw new Error('google.maps.Map is not available after loading script');
+        }
 
         if (!mapRef.current) return;
 
         const { lat, lon } = satData;
         const position = { lat, lng: lon };
 
-        // Create map instance
-        const map = new google.maps.Map(mapRef.current, {
+        // Create map instance (build options defensively in case some constants are missing)
+        const mapOptions = {
           center: position,
           zoom: 14,
           mapTypeId: 'satellite',
           mapTypeControl: true,
-          mapTypeControlOptions: {
-            style: google.maps.MapTypeControlStyle.HORIZONTAL_BAR,
-            position: google.maps.ControlPosition.TOP_CENTER,
-          },
           zoomControl: true,
-          zoomControlOptions: {
-            position: google.maps.ControlPosition.RIGHT_CENTER
-          },
           scaleControl: true,
           streetViewControl: false,
           fullscreenControl: true
-        });
+        };
 
-        // Add marker at target position
-        new google.maps.Marker({
-          position,
-          map,
-          title: `${satData.satId} Target Location`,
-          label: {
-            text: '🛰',
-            fontSize: '24px'
-          }
-        });
+        // Add mapTypeControlOptions only if the constants are available
+        if (google.maps?.MapTypeControlStyle && google.maps?.ControlPosition) {
+          mapOptions.mapTypeControlOptions = {
+            style: google.maps.MapTypeControlStyle?.HORIZONTAL_BAR ?? undefined,
+            position: google.maps.ControlPosition?.TOP_CENTER ?? undefined
+          };
+        }
+
+        // Add zoomControlOptions if ControlPosition available
+        if (google.maps?.ControlPosition) {
+          mapOptions.zoomControlOptions = {
+            position: google.maps.ControlPosition.RIGHT_CENTER
+          };
+        }
+
+        const map = new google.maps.Map(mapRef.current, mapOptions);
+
+        // Add marker at target position using standard Marker (AdvancedMarkerElement requires map ID)
+        let marker;
+        try {
+          marker = new google.maps.Marker({
+            position,
+            map,
+            title: `${satData.satId} Target Location`,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: '#FF6B35',
+              fillOpacity: 1,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 2
+            }
+          });
+        } catch (err) {
+          console.warn('Marker creation failed:', err);
+        }
 
         // Add info window
         const infoWindow = new google.maps.InfoWindow({
@@ -81,7 +140,20 @@ export default function SatImageryPanel({ satData, onClose }) {
           `
         });
 
-        infoWindow.open(map, new google.maps.Marker({ position, map }));
+        // Open info window anchored to marker when possible
+        try {
+          if (marker?.getPosition) {
+            infoWindow.open(map, marker);
+          } else if (marker && marker.element) {
+            // AdvancedMarkerElement uses element; pan to position and open infoWindow at map center
+            map.panTo(position);
+            infoWindow.open(map);
+          } else {
+            infoWindow.open(map);
+          }
+        } catch (err) {
+          console.warn('InfoWindow open failed:', err);
+        }
 
         mapInstanceRef.current = map;
         setIsLoading(false);

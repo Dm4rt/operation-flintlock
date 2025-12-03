@@ -7,20 +7,28 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server.js",
+    "server:dev": "node --watch server.js",
+    "dev:all": "npm run server:dev & npm run dev"
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^2.0.2",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.0",
     "cesium": "^1.135.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
     "firebase": "^12.6.0",
+    "firebase-admin": "^13.6.0",
     "lucide-react": "^0.554.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",
     "resium": "^1.19.1",
     "satellite.js": "^6.0.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "three": "^0.181.2"
   },
   "devDependencies": {

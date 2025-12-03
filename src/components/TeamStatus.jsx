@@ -1,15 +1,43 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { TEAMS } from "../utils/constants";
 import { Users } from "lucide-react";
 import useSession from "../hooks/useSession";
+import { useFlintlockSocket } from "../hooks/useFlintlockSocket";
 
 export default function TeamStatus({ sessionId }) {
     const { participants } = useSession(sessionId);
+    const socket = useFlintlockSocket(sessionId, null, null);
+    const [onlineTeams, setOnlineTeams] = useState(new Set());
 
-    const onlineSet = React.useMemo(() => 
-        new Set(participants.map(p => p.teamId)), 
-        [participants]
-    );
+    // Initialize from Firebase participants
+    React.useEffect(() => {
+        const onlineSet = new Set(participants.map(p => p.teamId));
+        setOnlineTeams(onlineSet);
+    }, [participants]);
+
+    // Listen for real-time Socket.IO connect/disconnect events
+    useEffect(() => {
+        if (!socket.isConnected) return;
+
+        const unsubscribeJoined = socket.on('team:joined', ({ teamId }) => {
+            console.log(`[TeamStatus] Team joined: ${teamId}`);
+            setOnlineTeams(prev => new Set([...prev, teamId]));
+        });
+
+        const unsubscribeLeft = socket.on('team:left', ({ teamId }) => {
+            console.log(`[TeamStatus] Team left: ${teamId}`);
+            setOnlineTeams(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(teamId);
+                return newSet;
+            });
+        });
+
+        return () => {
+            unsubscribeJoined();
+            unsubscribeLeft();
+        };
+    }, [socket]);
 
     return (
         <div className="bg-slate-950 rounded-xl border border-slate-800 p-6">
@@ -22,7 +50,7 @@ export default function TeamStatus({ sessionId }) {
 
             <div className="space-y-2">
                 {TEAMS.map(team => {
-                    const online = onlineSet.has(team.id);
+                    const online = onlineTeams.has(team.id);
                     return (
                         <div
                             key={team.id}

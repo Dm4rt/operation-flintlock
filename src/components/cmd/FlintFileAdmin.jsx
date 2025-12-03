@@ -1,33 +1,69 @@
 import React, { useState, useEffect } from 'react';
-import { subscribeToFlintVisibility } from '../../terminal/flintVisibility';
+import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
 import { revealFlintFile, hideFlintFile } from '../../terminal/initFlintFiles';
 
 export default function FlintFileAdmin({ sessionId }) {
+  const socket = useFlintlockSocket(sessionId, 'admin', 'Admin');
   const [visibilityMap, setVisibilityMap] = useState({});
   const [flintFiles, setFlintFiles] = useState([]);
 
-  // Subscribe to Firestore visibility changes
+  // Load initial flint files from Firestore and subscribe to Socket.IO updates
   useEffect(() => {
     if (!sessionId) return;
 
-    const unsubscribe = subscribeToFlintVisibility(sessionId, (newMap) => {
-      setVisibilityMap(newMap);
-      // Extract filenames from the map
-      setFlintFiles(Object.keys(newMap).sort());
+    // Load initial state from Firestore
+    const loadInitialFiles = async () => {
+      const { subscribeToFlintVisibility } = await import('../../terminal/flintVisibility');
+      const unsubFirestore = subscribeToFlintVisibility(sessionId, (newMap) => {
+        setVisibilityMap(newMap);
+        setFlintFiles(Object.keys(newMap).sort());
+      });
+      return unsubFirestore;
+    };
+
+    let unsubFirestore;
+    loadInitialFiles().then(unsub => { unsubFirestore = unsub; });
+
+    return () => {
+      if (unsubFirestore) unsubFirestore();
+    };
+  }, [sessionId]);
+
+  // Listen for visibility updates via Socket.IO
+  useEffect(() => {
+    if (!socket.isConnected) return;
+
+    const unsubscribe = socket.on('flint:visibility', ({ filename, visible }) => {
+      console.log('[FlintFileAdmin] Visibility update:', filename, visible);
+      setVisibilityMap(prev => ({
+        ...prev,
+        [filename]: visible
+      }));
     });
 
     return unsubscribe;
-  }, [sessionId]);
+  }, [socket]);
 
   const handleToggle = async (filename) => {
     const isCurrentlyVisible = visibilityMap[filename];
+    const newVisibility = !isCurrentlyVisible;
     
     try {
-      if (isCurrentlyVisible) {
-        await hideFlintFile(sessionId, filename);
-      } else {
+      // Update Firestore for persistence
+      if (newVisibility) {
         await revealFlintFile(sessionId, filename);
+      } else {
+        await hideFlintFile(sessionId, filename);
       }
+      
+      // Broadcast via Socket.IO for real-time updates
+      socket.updateFlintVisibility(filename, newVisibility);
+      
+      // Update local state immediately for UI responsiveness
+      setVisibilityMap(prev => ({
+        ...prev,
+        [filename]: newVisibility
+      }));
     } catch (error) {
       console.error('Failed to toggle visibility:', error);
     }

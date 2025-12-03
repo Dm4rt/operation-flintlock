@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { TEAMS } from "../utils/constants";
 import useSession from "../hooks/useSession";
 import useCountdown from "../hooks/useCountdown";
+import { useFlintlockSocket } from "../hooks/useFlintlockSocket";
 import SdaDashboard from "../components/sda/SdaDashboard";
 import SdrAdminPanel from "../components/sdr/SdrAdminPanel";
 import CyberTerminal from "../components/cyber/CyberTerminal";
@@ -14,6 +15,7 @@ export default function UserDashboard() {
   const navigate = useNavigate();
   const team = TEAMS.find(t => t.id === teamId);
   const { session, join } = useSession(code);
+  const socket = useFlintlockSocket(code, teamId, team?.name);
 
   useEffect(() => {
     if (!code || !teamId || !team) return;
@@ -40,8 +42,8 @@ export default function UserDashboard() {
     );
   }
 
-  // live countdown from session
-  const { timeLeft, isRunning } = useCountdown(code);
+  // live countdown from session via Socket.IO
+  const { timeLeft, isRunning } = useCountdown(socket);
 
   const minutes = String(Math.floor((timeLeft || 0) / 60)).padStart(2, '0');
   const seconds = String((timeLeft || 0) % 60).padStart(2, '0');

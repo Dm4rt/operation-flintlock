@@ -41,3 +41,5 @@ OS generated files
 
 .DS_Store
 Thumbs.db
+
+server/service-account.json

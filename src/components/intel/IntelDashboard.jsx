@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import StarBackground from '../StarBackground';
 import SatImageryPanel from './SatImageryPanel';
-import { fetchSatImagery, requestSdaSnapshot } from '../../services/intel/fetchSatImagery';
+import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
 
 const ANALYSIS_TOOLS = [
   { id: 'sat-imagery', name: 'Satellite Imagery', icon: '🛰️', description: 'Live satellite view from SDA ISR asset' },
@@ -10,10 +10,13 @@ const ANALYSIS_TOOLS = [
 ];
 
 export default function IntelDashboard({ operationId }) {
+  const socket = useFlintlockSocket(operationId, 'intel', 'Intel (intel)');
   const [selectedTool, setSelectedTool] = useState(null);
   const [satData, setSatData] = useState(null);
   const [isLoadingSat, setIsLoadingSat] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [imageryTimeoutId, setImageryTimeoutId] = useState(null);
+  const [imageryError, setImageryError] = useState(null);
 
   const handleToolClick = async (tool) => {
     setSelectedTool(tool);
@@ -26,30 +29,62 @@ export default function IntelDashboard({ operationId }) {
     }
   };
 
-  const loadSatImagery = async () => {
+  const loadSatImagery = () => {
+    // Clear any existing timeout
+    if (imageryTimeoutId) clearTimeout(imageryTimeoutId);
+
     setIsLoadingSat(true);
-    try {
-      // Request SDA to send snapshot
-      requestSdaSnapshot(operationId);
-      
-      // Wait a moment for SDA to process
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Fetch the snapshot from Firestore
-      const data = await fetchSatImagery(operationId);
-      
-      if (data) {
-        setSatData(data);
-      } else {
-        setAnalysisResult('No satellite data available. Ensure SDA has an ISR satellite selected.');
-      }
-    } catch (error) {
-      console.error('Failed to load sat imagery:', error);
-      setAnalysisResult('Error loading satellite imagery. Please try again.');
-    } finally {
+    setImageryError(null);
+    console.log('[Intel] Requesting satellite imagery via Socket.IO');
+    
+    // Request imagery from SDA via Socket.IO
+    socket.requestImagery('sentinel-7');
+
+    // Set timeout if SDA doesn't respond within 10 seconds
+    const timeout = setTimeout(() => {
       setIsLoadingSat(false);
-    }
+      setSatData(null);
+      setImageryError('No response from SDA team. The SDA team needs to select an ISR satellite (sentinel-7) before Intel can request imagery.');
+      setImageryTimeoutId(null);
+    }, 10000);
+
+    setImageryTimeoutId(timeout);
   };
+
+  // Listen for imagery coordinates and errors from SDA via Socket.IO
+  useEffect(() => {
+    if (!socket.isConnected) return;
+
+    const unsubscribeCoords = socket.on('intel:imageryCoords', (data) => {
+      console.log('[Intel] Received imagery coordinates:', data);
+      setSatData(data);
+      setIsLoadingSat(false);
+      
+      // Clear timeout if we got a response
+      if (imageryTimeoutId) {
+        clearTimeout(imageryTimeoutId);
+        setImageryTimeoutId(null);
+      }
+    });
+
+    const unsubscribeError = socket.on('intel:imageryError', (data) => {
+      console.warn('[Intel] Received imagery error from SDA:', data.error);
+      setIsLoadingSat(false);
+      setSatData(null);
+      setImageryError(data.error);
+      
+      // Clear timeout
+      if (imageryTimeoutId) {
+        clearTimeout(imageryTimeoutId);
+        setImageryTimeoutId(null);
+      }
+    });
+    
+    return () => {
+      unsubscribeCoords();
+      unsubscribeError();
+    };
+  }, [socket, imageryTimeoutId]);
 
   const runAnalysis = () => {
     if (!selectedTool) return;
@@ -134,6 +169,23 @@ export default function IntelDashboard({ operationId }) {
                 {/* Satellite Imagery Tool */}
                 {selectedTool.id === 'sat-imagery' && (
                   <div>
+                    {imageryError && (
+                      <div className="mb-4 p-4 bg-red-900/20 border border-red-500/50 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <span className="text-red-400 text-xl">⚠️</span>
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold text-red-300 mb-1">SDA Response Error</p>
+                            <p className="text-xs text-red-200/80">{imageryError}</p>
+                          </div>
+                          <button 
+                            onClick={() => setImageryError(null)}
+                            className="text-red-400 hover:text-red-300 text-lg"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {isLoadingSat ? (
                       <div className="flex items-center justify-center min-h-[500px]">
                         <div className="text-center">

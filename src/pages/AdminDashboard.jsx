@@ -6,6 +6,7 @@ import TeamStatus from "../components/TeamStatus";
 import useSession from "../hooks/useSession";
 import useCountdown from "../hooks/useCountdown";
 import { useNavigate } from "react-router-dom";
+import { useFlintlockSocket } from "../hooks/useFlintlockSocket";
 import { db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { initializeFlintFiles } from "../terminal/initFlintFiles";
@@ -20,7 +21,8 @@ export default function AdminDashboard() {
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState([]);
   const { session, participants, update, pushInject } = useSession(scenarioId);
-  const { timeLeft: syncedTimeLeft } = useCountdown(scenarioId);
+  // Admin doesn't need useCountdown - it's the source of truth
+  const socket = useFlintlockSocket(scenarioId, 'admin', 'Mission Control');
 
   const formatTime = (seconds = 0) => {
     const safe = Math.max(0, seconds || 0);
@@ -68,6 +70,12 @@ export default function AdminDashboard() {
     setIsRunning(true);
     addLog(`Operation ${scenarioId} STARTED`);
     
+    // Broadcast initial time immediately
+    if (socket.isConnected) {
+      socket.emitMissionTick(timeLeft, true);
+      console.log('[Admin] Broadcasting initial time:', timeLeft);
+    }
+    
     // Initialize all flint- files in Firestore with visible: false
     try {
       await initializeFlintFiles(scenarioId);
@@ -78,16 +86,29 @@ export default function AdminDashboard() {
     }
   };
 
-  // Automatically stop locally when synced timer reaches zero
+  // Broadcast mission timer via Socket.IO every second
   useEffect(() => {
-    if (!isRunning) return;
-    if (syncedTimeLeft == null) return;
-    if (syncedTimeLeft > 0) return;
+    if (!isRunning || !socket.isConnected) return;
 
-    setIsRunning(false);
-    setTimeLeft(0);
-    addLog('Timer Ended');
-  }, [isRunning, syncedTimeLeft]);
+    const interval = setInterval(() => {
+      setTimeLeft(prev => {
+        const next = Math.max(0, prev - 1);
+        
+        // Broadcast the new time
+        socket.emitMissionTick(next, isRunning);
+        
+        if (next === 0) {
+          setIsRunning(false);
+          addLog('Timer Ended');
+        }
+        return next;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isRunning, socket, addLog]);
+
+  // Admin controls the timer, doesn't need to sync from Socket.IO
 
   // sync local state to firestore when admin triggers changes (start/stop/modify)
   useEffect(() => {
@@ -195,13 +216,13 @@ export default function AdminDashboard() {
             </select>
           </div>
 
-          {isRunning && session?.startedAt ? (
+          {isRunning ? (
             <div className="bg-orange-600/90 rounded-xl border border-orange-400 px-6 py-8 text-center shadow-lg shadow-orange-500/40">
               <p className="text-xs text-orange-100 uppercase tracking-widest font-bold">Mission Timer</p>
               <div className="text-6xl font-mono font-black text-white mt-4">
-                {formatTime(syncedTimeLeft)}
+                {formatTime(timeLeft)}
               </div>
-              <p className="text-xs text-orange-100/80 mt-3">Controlled by Mission Control</p>
+              <p className="text-xs text-orange-100/80 mt-3">Broadcasting to all teams</p>
             </div>
           ) : (
             <Timer

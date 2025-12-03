@@ -11,13 +11,15 @@ import gpsImage from './assets/GPS_III.jpg';
 import sbirsImage from './assets/SBIRS.jpg';
 import isrImage from './assets/ISR.jpg';
 import { db } from '../../services/firebase';
-import { collection, doc, onSnapshot, setDoc, updateDoc, getDocs } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, getDocs } from 'firebase/firestore';
 import useCountdown from '../../hooks/useCountdown';
 import useSession from '../../hooks/useSession';
+import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
 
 export default function SdaDashboard({ sessionCode }) {
-  const { timeLeft } = useCountdown(sessionCode);
   const { join } = useSession(sessionCode);
+  const socket = useFlintlockSocket(sessionCode, 'sda', 'Space Ops - SDA');
+  const { timeLeft } = useCountdown(socket);
   const [satellites, setSatellites] = useState([]);
   const [selectedSatellite, setSelectedSatellite] = useState(null);
   const [showOrbits, setShowOrbits] = useState(false);
@@ -31,6 +33,18 @@ export default function SdaDashboard({ sessionCode }) {
       message: 'SDA System Online - 4 satellites tracked'
     }
   ]);
+
+  // Use refs to access latest values in Socket.IO listeners without causing re-renders
+  const selectedSatelliteRef = useRef(selectedSatellite);
+  const operationIdRef = useRef(sessionCode);
+  
+  useEffect(() => {
+    selectedSatelliteRef.current = selectedSatellite;
+  }, [selectedSatellite]);
+
+  useEffect(() => {
+    operationIdRef.current = sessionCode;
+  }, [sessionCode]);
 
   // Helper function to add inject messages
   const addInject = React.useCallback((inject) => {
@@ -104,12 +118,13 @@ export default function SdaDashboard({ sessionCode }) {
     initSatellites();
   }, [sessionCode]);
 
-  // Subscribe to satellites from Firebase
+  // Load initial satellites from Firebase (one-time)
   useEffect(() => {
     if (!sessionCode) return;
 
-    const satellitesRef = collection(db, 'sessions', sessionCode, 'satellites');
-    const unsubscribe = onSnapshot(satellitesRef, (snapshot) => {
+    const loadSatellites = async () => {
+      const satellitesRef = collection(db, 'sessions', sessionCode, 'satellites');
+      const snapshot = await getDocs(satellitesRef);
       const sats = [];
       snapshot.forEach(doc => {
         const data = doc.data();
@@ -121,91 +136,104 @@ export default function SdaDashboard({ sessionCode }) {
         });
       });
       
-      console.log('Firebase update received:', sats.map(s => ({
-        id: s.id,
-        offsets: s.maneuverOffsets,
-        fuel: s.fuelPoints
-      })));
-      
       setSatellites(sats);
+      if (sats.length > 0 && !selectedSatellite) {
+        setSelectedSatellite(sats[0]);
+      }
+    };
+
+    loadSatellites();
+  }, [sessionCode]);
+
+  // Subscribe to satellite updates via Socket.IO
+  useEffect(() => {
+    if (!socket.isConnected) return;
+
+    const unsubscribe = socket.on('sat:update', ({ satellites: remoteSats }) => {
+      console.log('Socket.IO satellite update received:', remoteSats.length, 'satellites');
+      setSatellites(remoteSats);
       
       // Update selected satellite if it exists in the new list
       if (selectedSatellite) {
-        const updated = sats.find(s => s.id === selectedSatellite.id);
+        const updated = remoteSats.find(s => s.id === selectedSatellite.id);
         if (updated) {
-          console.log('Updating selected satellite:', updated.id, updated.maneuverOffsets);
           setSelectedSatellite(updated);
         }
-      } else if (sats.length > 0) {
-        // Set initial selected satellite
-        setSelectedSatellite(sats[0]);
       }
     });
 
-    return () => unsubscribe();
-  }, [sessionCode]);
+    return unsubscribe;
+  }, [socket, selectedSatellite]);
 
-  // Update satellite positions every second (just for display, doesn't change Firebase)
+  // Update satellite positions every second and broadcast via Socket.IO
   useEffect(() => {
+    if (!socket.isConnected) return;
+
     const interval = setInterval(() => {
-      setSatellites(prev => prev.map(sat => {
-        const position = propagateSatellite(sat.tle);
-        return {
-          ...sat,
-          currentPosition: position
-        };
-      }));
+      setSatellites(prev => {
+        const updated = prev.map(sat => {
+          const position = propagateSatellite(sat.tle);
+          return {
+            ...sat,
+            currentPosition: position
+          };
+        });
+        
+        // Broadcast to all teams via Socket.IO
+        socket.emitSatelliteUpdate(updated);
+        return updated;
+      });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [socket]);
 
-  // Listen for Intel snapshot requests via Firestore
+  // Listen for Intel imagery requests via Socket.IO
   useEffect(() => {
-    if (!sessionCode) return;
+    if (!socket.isConnected) return;
     
-    console.log('[SDA] Setting up Firestore Intel snapshot listener, satellite:', selectedSatellite?.id);
+    console.log('[SDA] Setting up Socket.IO Intel imagery request listener');
     
-    const intelDocRef = doc(db, 'sessions', sessionCode, 'intel', 'satImagery');
-    
-    const unsubscribe = onSnapshot(intelDocRef, async (docSnap) => {
-      if (!docSnap.exists()) return;
+    const unsubscribe = socket.on('intel:requestImagery', ({ satId, requestedBy }) => {
+      console.log('[SDA] *** Intel imagery request received via Socket.IO ***', { satId, requestedBy });
       
-      const data = docSnap.data();
+      const currentSatellite = selectedSatelliteRef.current;
+      const currentOperationId = operationIdRef.current;
       
-      // Check if there's a pending request
-      if (!data.requestPending) return;
-      
-      console.log('[SDA] *** Intel snapshot request detected in Firestore ***');
-      
-      if (!selectedSatellite) {
+      if (!currentSatellite) {
         console.warn('[SDA] No satellite selected for snapshot');
         addInject({
           type: 'warning',
           message: 'Intel requested imagery but no ISR satellite selected'
         });
-        
-        // Clear the request flag
-        await setDoc(intelDocRef, { requestPending: false }, { merge: true });
+        // Send error response to Intel
+        socket.emit('sda:imageryError', {
+          sessionId: currentOperationId,
+          requestedBy,
+          error: 'No ISR satellite selected. Please select sentinel-7 in SDA dashboard.'
+        });
         return;
       }
 
       // Only send snapshot for ISR satellites (sentinel-7)
-      if (!selectedSatellite.id.includes('sentinel')) {
-        console.warn('[SDA] Selected satellite is not ISR type:', selectedSatellite.id);
+      if (!currentSatellite.id.includes('sentinel')) {
+        console.warn('[SDA] Selected satellite is not ISR type:', currentSatellite.id);
         addInject({
           type: 'warning',
-          message: `Intel requested imagery but ${selectedSatellite.id} is not an ISR satellite`
+          message: `Intel requested imagery but ${currentSatellite.id} is not an ISR satellite`
         });
-        
-        // Clear the request flag
-        await setDoc(intelDocRef, { requestPending: false }, { merge: true });
+        // Send error response to Intel
+        socket.emit('sda:imageryError', {
+          sessionId: currentOperationId,
+          requestedBy,
+          error: `Wrong satellite selected. SDA has ${currentSatellite.id} selected, but Intel needs sentinel-7 (ISR satellite).`
+        });
         return;
       }
 
       try {
         // Get current position from TLE propagation
-        const position = selectedSatellite.currentPosition;
+        const position = currentSatellite.currentPosition;
         
         console.log('[SDA] Current position:', position);
         
@@ -215,9 +243,6 @@ export default function SdaDashboard({ sessionCode }) {
             type: 'error',
             message: 'No position data available for satellite'
           });
-          
-          // Clear the request flag
-          await setDoc(intelDocRef, { requestPending: false }, { merge: true });
           return;
         }
 
@@ -226,25 +251,20 @@ export default function SdaDashboard({ sessionCode }) {
         
         console.log('[SDA] Extracted coordinates:', { lat, lon, alt });
         
-        // Push snapshot to Firestore
-        const snapshotData = {
-          satId: selectedSatellite.id,
+        // Send coordinates back to Intel via Socket.IO
+        socket.sendImageryCoords(
+          currentSatellite.id,
           lat,
           lon,
-          altKm: alt,
-          timestamp: new Date().toISOString(),
-          requestPending: false // Clear the request flag
-        };
+          alt,
+          requestedBy
+        );
         
-        console.log('[SDA] Writing to Firestore:', `sessions/${sessionCode}/intel/satImagery`);
-        
-        await setDoc(intelDocRef, snapshotData, { merge: true });
-        
-        console.log('[SDA] ✅ Snapshot pushed to Firestore:', snapshotData);
+        console.log('[SDA] ✅ Imagery coordinates sent via Socket.IO');
         
         addInject({
           type: 'success',
-          message: `Intel snapshot sent: ${selectedSatellite.id} at (${lat.toFixed(2)}°, ${lon.toFixed(2)}°)`
+          message: `Intel snapshot sent: ${currentSatellite.id} at (${lat.toFixed(2)}°, ${lon.toFixed(2)}°)`
         });
       } catch (error) {
         console.error('[SDA] ❌ Failed to send snapshot:', error);
@@ -252,19 +272,13 @@ export default function SdaDashboard({ sessionCode }) {
           type: 'error',
           message: `Snapshot failed: ${error.message}`
         });
-        
-        // Clear the request flag even on error
-        await setDoc(intelDocRef, { requestPending: false }, { merge: true });
       }
     });
     
-    console.log('[SDA] Firestore listener attached for Intel requests');
+    console.log('[SDA] Socket.IO listener attached for Intel requests');
     
-    return () => {
-      console.log('[SDA] Removing Firestore Intel snapshot listener');
-      unsubscribe();
-    };
-  }, [sessionCode, selectedSatellite, addInject]);
+    return unsubscribe;
+  }, [socket.isConnected]);
 
   // Handle maneuver planning (allows stacking multiple maneuvers)
   const handlePlanManeuver = (maneuverType) => {
@@ -369,26 +383,23 @@ export default function SdaDashboard({ sessionCode }) {
       </div>
 
       {/* Header */}
-      <div className="bg-slate-900/60 border-b border-slate-800 px-6 py-3 flex items-center justify-between flex-shrink-0">
-        <div>
-          <h1 className="text-xl font-black text-white flex items-center gap-2">
-            <span className="text-orange-400">◉</span> SPACE DOMAIN AWARENESS
-          </h1>
-          <p className="text-xs text-slate-400 uppercase">Orbital Operations Center</p>
-        </div>
-        <div className="flex items-center gap-6">
-          {/* Team */}
-          <div className="text-left">
-            <p className="text-xs text-slate-400 uppercase">Team</p>
-            <div className="text-lg font-bold text-white">Space Ops - SDA</div>
+      <header className="bg-[#0a0f1e] border-b border-slate-800 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <div className="px-3 py-1.5 rounded border border-orange-500 bg-orange-500/10">
+              <span className="text-sm font-bold text-orange-200">SDA</span>
+            </div>
+            <h1 className="text-xl font-bold text-slate-100">Space Domain Awareness</h1>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Orbital Operations Center</p>
           </div>
-          {/* Room Code */}
-          <div className="text-left">
-            <p className="text-xs text-slate-400 uppercase">Session</p>
-            <div className="text-lg font-mono font-bold text-blue-400">{sessionCode}</div>
+          <div className="flex items-center gap-6">
+            <div className="text-right">
+              <p className="text-[10px] uppercase tracking-wider text-slate-500">Operation ID</p>
+              <p className="text-lg font-mono font-bold text-blue-400">{sessionCode}</p>
+            </div>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Main Content Grid */}
       <div className="flex-1 flex gap-0 min-h-0 overflow-hidden">

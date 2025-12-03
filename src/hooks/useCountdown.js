@@ -1,28 +1,20 @@
 import { useEffect, useState } from 'react';
-import useSession from './useSession';
 
-export default function useCountdown(sessionId) {
-  const { session } = useSession(sessionId);
-  const [timeLeft, setTimeLeft] = useState(session ? (session.timeLeft || 0) : 0);
+export default function useCountdown(socket) {
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
 
   useEffect(() => {
-    if (!session) return;
-    // if session provides startedAt + timeLeftAtStart use that to compute live countdown
-    if (session.isRunning && session.startedAt && session.timeLeftAtStart != null) {
-      const tick = () => {
-        const elapsed = Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000);
-        const remaining = Math.max(0, (session.timeLeftAtStart || 0) - elapsed);
-        setTimeLeft(remaining);
-      };
-      tick();
-      const id = setInterval(tick, 500);
-      return () => clearInterval(id);
-    }
+    if (!socket?.isConnected) return;
 
-    // otherwise fall back to session.timeLeft
-    setTimeLeft(session.timeLeft || 0);
-    return undefined;
-  }, [session]);
+    const unsubscribe = socket.on('mission:tick', ({ timeLeft: newTimeLeft, isRunning: newIsRunning }) => {
+      console.log('[useCountdown] Received tick:', newTimeLeft, newIsRunning);
+      setTimeLeft(newTimeLeft);
+      setIsRunning(newIsRunning);
+    });
 
-  return { timeLeft, isRunning: session?.isRunning || false };
+    return unsubscribe;
+  }, [socket]);
+
+  return { timeLeft, isRunning };
 }
