@@ -21,6 +21,8 @@ export default class SimpleTuner {
     this.signalNodes = new Map(); // id → { source, gain, buffer }
     this.bufferCache = new Map();
     this.volume = 0.75;
+    this.isMuted = false;
+    this.pausedStaticLevel = 0.3;
     
     // User's current tuning state
     this.centerFreq = 100_000_000; // Hz
@@ -98,15 +100,37 @@ export default class SimpleTuner {
 
   setVolume(val) {
     this.volume = val;
-    if (this.masterGain) this.masterGain.gain.value = val;
+    if (this.masterGain) {
+      this.masterGain.gain.value = this.isMuted ? 0 : val;
+    }
   }
 
   mute() {
-    if (this.masterGain) this.masterGain.gain.value = 0;
+    this.isMuted = true;
+    const now = this.context?.currentTime || 0;
+    if (this.masterGain) {
+      this.masterGain.gain.setTargetAtTime(0, now, 0.05);
+    }
+    if (this.staticGain) {
+      this.pausedStaticLevel = this.staticGain.gain.value;
+      this.staticGain.gain.setTargetAtTime(0, now, 0.05);
+    }
+    this.signalNodes.forEach((node) => {
+      node.gain.gain.setTargetAtTime(MIN_GAIN, now, 0.05);
+    });
   }
 
   unmute() {
-    if (this.masterGain) this.masterGain.gain.value = this.volume;
+    this.isMuted = false;
+    const now = this.context?.currentTime || 0;
+    if (this.masterGain) {
+      this.masterGain.gain.setTargetAtTime(this.volume, now, 0.05);
+    }
+    if (this.staticGain) {
+      this.staticGain.gain.setTargetAtTime(this.pausedStaticLevel ?? 0.3, now, 0.1);
+    }
+    // Refresh gains based on latest tuning so signal/static mix comes back cleanly
+    this.updateTuning({});
   }
 
   /**
@@ -122,6 +146,16 @@ export default class SimpleTuner {
     if (!this.isReady()) return;
 
     const now = this.context.currentTime;
+
+    if (this.isMuted) {
+      if (this.staticGain) {
+        this.staticGain.gain.setTargetAtTime(0, now, 0.05);
+      }
+      this.signalNodes.forEach((node) => {
+        node.gain.gain.setTargetAtTime(MIN_GAIN, now, 0.05);
+      });
+      return;
+    }
 
     // For each transmission, compute a proximity score (0 = far, 1 = perfect)
     // Use very tight tolerances so signal is barely audible until nearly perfect

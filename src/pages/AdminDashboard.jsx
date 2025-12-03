@@ -176,7 +176,7 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between bg-slate-900 p-6 rounded-xl border border-slate-700">
         <div>
-          <h1 className="text-3xl font-black text-white">MISSION CONTROL</h1>
+          <h1 className="text-3xl font-black text-white">ADMIN CONTROL PANEL</h1>
           <p className="text-sm text-slate-400">LIVE UPLINK</p>
         </div>
 
