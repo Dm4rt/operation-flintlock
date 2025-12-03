@@ -5,6 +5,7 @@ import Earth from './Earth';
 import SatelliteObject from './SatelliteObject';
 import OrbitPath from './OrbitPath';
 import { propagateSatellite } from '../../utils/orbitUtils';
+import { ensureOffsets, getTrackAdjustedDate } from '../../utils/maneuverLogic';
 
 export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelectSatellite, showOrbits, plannedManeuver }) {
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -24,13 +25,48 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
     useEffect(() => {
         const positions = {};
         satellites.forEach(sat => {
-            const position = propagateSatellite(sat.tle, currentTime);
+            const effectiveDate = getTrackAdjustedDate(currentTime, sat.maneuverOffsets);
+            const position = propagateSatellite(sat.tle, effectiveDate);
             if (position) {
                 positions[sat.id] = position;
             }
         });
         setSatellitePositions(positions);
     }, [satellites, currentTime]);
+
+    const plannedOffsets = plannedManeuver?.previewSatellite
+        ? ensureOffsets(plannedManeuver.previewSatellite.maneuverOffsets)
+        : null;
+    const baseOffsets = plannedManeuver ? ensureOffsets(plannedManeuver.baseOffsets) : null;
+    const hasGeometryDelta = plannedOffsets && baseOffsets
+        ? (
+            plannedOffsets.altitudeOffset !== baseOffsets.altitudeOffset ||
+            plannedOffsets.phaseOffset !== baseOffsets.phaseOffset ||
+            plannedOffsets.inclinationOffset !== baseOffsets.inclinationOffset
+          )
+        : false;
+    const trackDeltaSeconds = plannedOffsets && baseOffsets
+        ? plannedOffsets.trackSeconds - baseOffsets.trackSeconds
+        : 0;
+    const showTrackGhost = Boolean(plannedOffsets && trackDeltaSeconds !== 0 && selectedSatellite?.tle);
+    const plannedGhostPosition = showTrackGhost
+        ? propagateSatellite(
+            selectedSatellite.tle,
+            getTrackAdjustedDate(currentTime, plannedOffsets)
+          )
+        : null;
+    const plannedGhostSatellite = showTrackGhost
+        ? {
+            ...(plannedManeuver?.previewSatellite || {}),
+            id: `${plannedManeuver?.satelliteId || selectedSatellite?.id || 'sat'}-ghost`,
+            name: `${selectedSatellite?.name || 'Satellite'} Boost Target`,
+            type: selectedSatellite?.type,
+            mission: plannedManeuver?.previewSatellite?.mission || selectedSatellite?.mission
+        }
+        : null;
+    const formattedTrackDelta = trackDeltaSeconds !== 0
+        ? `${trackDeltaSeconds > 0 ? '+' : ''}${Math.round(trackDeltaSeconds / 60)} min`
+        : '';
 
     return (
         <div className="w-full h-full relative bg-[#0a1125]">
@@ -73,13 +109,29 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
                     ))}
 
                     {/* Planned Maneuver Orbit Preview */}
-                    {showOrbits && plannedManeuver && plannedManeuver.previewSatellite && selectedSatellite?.tle && (
+                    {showOrbits && hasGeometryDelta && plannedManeuver && plannedManeuver.previewSatellite && selectedSatellite?.tle && (
                         <OrbitPath
                             key={`planned-${Date.now()}`}
                             tle={selectedSatellite.tle}
                             satelliteType="planned"
                             isSelected={false}
                             offsets={plannedManeuver.previewSatellite.maneuverOffsets}
+                        />
+                    )}
+
+                    {/* Along-track boost preview */}
+                    {showTrackGhost && plannedGhostPosition && plannedGhostSatellite && (
+                        <SatelliteObject
+                            key={plannedGhostSatellite.id}
+                            satellite={plannedGhostSatellite}
+                            position={plannedGhostPosition}
+                            isSelected={false}
+                            onSelect={() => {}}
+                            onHover={() => {}}
+                            offsets={plannedOffsets}
+                            variant="ghost"
+                            interactive={false}
+                            labelOverride={`Boost ${formattedTrackDelta}`}
                         />
                     )}
 

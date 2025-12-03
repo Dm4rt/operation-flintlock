@@ -5,7 +5,7 @@ import SdaManeuverPlanner from './SdaManeuverPlanner';
 import SdaInjectFeed from './SdaInjectFeed';
 import satellitesData from '../../data/fictionalSatellites.json';
 import { propagateSatellite } from '../../utils/orbitUtils';
-import { applyManeuver, applyManeuverOffsets } from '../../utils/maneuverLogic';
+import { applyManeuver, applyManeuverOffsets, DEFAULT_MANEUVER_OFFSETS, ensureOffsets, getTrackAdjustedDate } from '../../utils/maneuverLogic';
 import aehfImage from './assets/AEHF_1.jpg';
 import gpsImage from './assets/GPS_III.jpg';
 import sbirsImage from './assets/SBIRS.jpg';
@@ -85,11 +85,7 @@ export default function SdaDashboard({ sessionCode }) {
             const satDoc = doc(db, 'sessions', sessionCode, 'satellites', sat.id);
             const data = {
               ...sat,
-              maneuverOffsets: {
-                altitudeOffset: 0,
-                phaseOffset: 0,
-                inclinationOffset: 0
-              },
+              maneuverOffsets: { ...DEFAULT_MANEUVER_OFFSETS },
               fuelPoints: sat.fuelPoints || 100,
               status: sat.status || {
                 health: 'nominal',
@@ -99,7 +95,13 @@ export default function SdaDashboard({ sessionCode }) {
               },
               lastUpdated: new Date().toISOString()
             };
-            await setDoc(satDoc, data);
+            await setDoc(satDoc, {
+              ...data,
+              currentPosition: propagateSatellite(
+                sat.tle,
+                getTrackAdjustedDate(new Date(), data.maneuverOffsets)
+              )
+            });
           }
 
           // Re-fetch now that initialization completed
@@ -109,10 +111,15 @@ export default function SdaDashboard({ sessionCode }) {
         const sats = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          const maneuverOffsets = ensureOffsets(data.maneuverOffsets);
           sats.push({
             ...data,
+            maneuverOffsets,
             id: docSnap.id,
-            currentPosition: propagateSatellite(data.tle)
+            currentPosition: propagateSatellite(
+              data.tle,
+              getTrackAdjustedDate(new Date(), maneuverOffsets)
+            )
           });
         });
 
@@ -163,7 +170,10 @@ export default function SdaDashboard({ sessionCode }) {
     const interval = setInterval(() => {
       setSatellites(prev => {
         const updated = prev.map(sat => {
-          const position = propagateSatellite(sat.tle);
+          const position = propagateSatellite(
+            sat.tle,
+            getTrackAdjustedDate(new Date(), sat.maneuverOffsets)
+          );
           return {
             ...sat,
             currentPosition: position
@@ -276,11 +286,7 @@ export default function SdaDashboard({ sessionCode }) {
     try {
       if (!selectedSatellite) return;
 
-      const snapshotOffsets = (sat) => ({
-        altitudeOffset: sat?.maneuverOffsets?.altitudeOffset || 0,
-        phaseOffset: sat?.maneuverOffsets?.phaseOffset || 0,
-        inclinationOffset: sat?.maneuverOffsets?.inclinationOffset || 0
-      });
+      const snapshotOffsets = (sat) => ensureOffsets(sat?.maneuverOffsets);
 
       const isContinuingPlan =
         plannedManeuver && plannedManeuver.satelliteId === selectedSatellite.id;
@@ -332,7 +338,11 @@ export default function SdaDashboard({ sessionCode }) {
       const updatedSatellite = {
         ...plannedManeuver.previewSatellite,
         id: plannedManeuver.satelliteId,
-        ...updateData
+        ...updateData,
+        currentPosition: propagateSatellite(
+          plannedManeuver.previewSatellite.tle || selectedSatellite?.tle,
+          getTrackAdjustedDate(new Date(), updateData.maneuverOffsets)
+        )
       };
 
       setSatellites((prev) => {

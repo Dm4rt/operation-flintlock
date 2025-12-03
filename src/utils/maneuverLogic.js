@@ -8,15 +8,29 @@ export const MANEUVER_TYPES = {
   LOWER_ORBIT: 'lower_orbit',
   PHASE_FORWARD: 'phase_forward',
   PHASE_BACKWARD: 'phase_backward',
-  INCLINATION_CHANGE: 'inclination_change'
+  INCLINATION_CHANGE: 'inclination_change',
+  PHASE_THRUST: 'phase_thrust'
 };
+
+export const DEFAULT_MANEUVER_OFFSETS = {
+  altitudeOffset: 0,
+  phaseOffset: 0,
+  inclinationOffset: 0,
+  trackSeconds: 0
+};
+
+export const ensureOffsets = (offsets = {}) => ({
+  ...DEFAULT_MANEUVER_OFFSETS,
+  ...offsets
+});
 
 export const MANEUVER_COSTS = {
   [MANEUVER_TYPES.RAISE_ORBIT]: 3,
   [MANEUVER_TYPES.LOWER_ORBIT]: 3,
   [MANEUVER_TYPES.PHASE_FORWARD]: 2,
   [MANEUVER_TYPES.PHASE_BACKWARD]: 2,
-  [MANEUVER_TYPES.INCLINATION_CHANGE]: 5
+  [MANEUVER_TYPES.INCLINATION_CHANGE]: 5,
+  [MANEUVER_TYPES.PHASE_THRUST]: 6
 };
 
 export const MANEUVER_DESCRIPTIONS = {
@@ -24,12 +38,14 @@ export const MANEUVER_DESCRIPTIONS = {
   [MANEUVER_TYPES.LOWER_ORBIT]: 'Burn retrograde - lowers periapsis',
   [MANEUVER_TYPES.PHASE_FORWARD]: 'Radial out burn - shifts orbit outward',
   [MANEUVER_TYPES.PHASE_BACKWARD]: 'Radial in burn - shifts orbit inward',
-  [MANEUVER_TYPES.INCLINATION_CHANGE]: 'Normal burn - changes orbital plane'
+  [MANEUVER_TYPES.INCLINATION_CHANGE]: 'Normal burn - changes orbital plane',
+  [MANEUVER_TYPES.PHASE_THRUST]: 'Tangent burn - increases speed along orbit track'
 };
 
 const ALTITUDE_DELTA_KM = 500;
 const PHASE_DELTA = 0.2;
 const INCLINATION_DELTA_DEG = 5;
+const TRACK_DELTA_SECONDS = 240; // ~4 minutes of along-track advance
 
 /**
  * Apply maneuver to satellite and return updated state
@@ -45,13 +61,7 @@ export function applyManeuver(satellite, maneuverType) {
   }
 
   const newSatellite = { ...satellite };
-  const offsets = {
-    ...(newSatellite.maneuverOffsets || {
-      altitudeOffset: 0,
-      phaseOffset: 0,
-      inclinationOffset: 0
-    })
-  };
+  const offsets = ensureOffsets(newSatellite.maneuverOffsets);
 
   switch (maneuverType) {
     case MANEUVER_TYPES.RAISE_ORBIT:
@@ -68,6 +78,9 @@ export function applyManeuver(satellite, maneuverType) {
       break;
     case MANEUVER_TYPES.INCLINATION_CHANGE:
       offsets.inclinationOffset += INCLINATION_DELTA_DEG; // +5 degrees (normal)
+      break;
+    case MANEUVER_TYPES.PHASE_THRUST:
+      offsets.trackSeconds += TRACK_DELTA_SECONDS;
       break;
     default:
       throw new Error('Unknown maneuver type');
@@ -91,14 +104,20 @@ export function applyManeuver(satellite, maneuverType) {
  * @returns {Object} Modified position
  */
 export function applyManeuverOffsets(position, offsets) {
-  if (!position || !offsets) return position;
+  if (!position) return position;
+  const safeOffsets = ensureOffsets(offsets);
 
   return {
     ...position,
-    alt: position.alt + offsets.altitudeOffset,
-    lat: position.lat + (offsets.inclinationOffset * 0.1), // simplified
-    lon: position.lon + (offsets.phaseOffset * 10) // simplified phase shift
+    alt: position.alt + safeOffsets.altitudeOffset,
+    lat: position.lat + (safeOffsets.inclinationOffset * 0.1),
+    lon: position.lon + (safeOffsets.phaseOffset * 10)
   };
+}
+
+export function getTrackAdjustedDate(baseDate, offsets) {
+  const safeOffsets = ensureOffsets(offsets);
+  return new Date(baseDate.getTime() + safeOffsets.trackSeconds * 1000);
 }
 
 /**

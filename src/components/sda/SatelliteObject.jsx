@@ -8,15 +8,20 @@ export default function SatelliteObject({
   satellite, 
   position, 
   isSelected, 
-  onSelect,
-  onHover,
-  offsets 
+  onSelect = () => {},
+  onHover = () => {},
+  offsets,
+  variant = 'normal',
+  interactive = true,
+  labelOverride
 }) {
   const meshRef = useRef();
   const [hovered, setHovered] = useState(false);
+  const isGhost = variant === 'ghost';
 
   // Get color based on satellite type
   const getSatelliteColor = () => {
+    if (isGhost) return '#38bdf8';
     if (isSelected) return '#fb923c'; // orange
     if (hovered) return '#ffffff'; // white
     
@@ -30,11 +35,11 @@ export default function SatelliteObject({
   };
 
   const color = getSatelliteColor();
-  const size = isSelected ? 0.35 : hovered ? 0.28 : 0.22;
+  const size = isGhost ? 0.18 : isSelected ? 0.35 : hovered ? 0.28 : 0.22;
 
   // Pulse animation for selected satellite
   useFrame((state) => {
-    if (meshRef.current && isSelected) {
+    if (meshRef.current && isSelected && !isGhost) {
       const scale = 1 + Math.sin(state.clock.elapsedTime * 3) * 0.15;
       meshRef.current.scale.setScalar(scale);
     }
@@ -100,24 +105,28 @@ export default function SatelliteObject({
     return applyManeuverOffsets(position, offsets);
   }, [position, offsets]);
 
+  const shouldShowLabel = (isSelected || hovered || isGhost) && telemetryPosition;
+  const primaryLabel = labelOverride || satellite.name;
+  const secondaryLabel = labelOverride ? satellite.name : satellite.mission;
+
   return (
     <group position={cartesianPosition}>
       <mesh
         ref={meshRef}
-        onClick={(e) => {
+        onClick={interactive ? (e => {
           e.stopPropagation();
           onSelect(satellite);
-        }}
-        onPointerOver={(e) => {
+        }) : undefined}
+        onPointerOver={interactive ? (e => {
           e.stopPropagation();
           setHovered(true);
           onHover(satellite);
-        }}
-        onPointerOut={(e) => {
+        }) : undefined}
+        onPointerOut={interactive ? (e => {
           e.stopPropagation();
           setHovered(false);
           onHover(null);
-        }}
+        }) : undefined}
       >
         <sphereGeometry args={[size, 16, 16]} />
         <meshStandardMaterial 
@@ -133,12 +142,12 @@ export default function SatelliteObject({
         <meshBasicMaterial 
           color={color}
           transparent
-          opacity={0.3}
+          opacity={isGhost ? 0.2 : 0.3}
         />
       </mesh>
 
       {/* Label for selected or hovered satellite */}
-      {(isSelected || hovered) && telemetryPosition && (
+      {shouldShowLabel && (
         <Html
           position={[0, size * 3, 0]}
           center
@@ -151,10 +160,14 @@ export default function SatelliteObject({
           <div className={`px-3 py-2 rounded-lg border-2 backdrop-blur-md ${
             isSelected 
               ? 'bg-orange-500/90 border-orange-400' 
-              : 'bg-slate-900/90 border-slate-700'
+              : isGhost
+                ? 'bg-cyan-500/80 border-cyan-300'
+                : 'bg-slate-900/90 border-slate-700'
           }`}>
-            <p className="text-white font-bold text-xs whitespace-nowrap">{satellite.name}</p>
-            <p className="text-slate-300 text-[10px] whitespace-nowrap">{satellite.mission}</p>
+            <p className="text-white font-bold text-xs whitespace-nowrap">{primaryLabel}</p>
+            {secondaryLabel && (
+              <p className="text-slate-300 text-[10px] whitespace-nowrap">{secondaryLabel}</p>
+            )}
             <div className="text-slate-400 text-[9px] font-mono mt-1 space-y-0.5">
               <p>Lat: {telemetryPosition.lat.toFixed(2)}°</p>
               <p>Lon: {telemetryPosition.lon.toFixed(2)}°</p>

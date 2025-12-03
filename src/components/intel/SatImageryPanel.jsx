@@ -10,6 +10,8 @@ export default function SatImageryPanel({ satData, onClose }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const mapInstanceRef = useRef(null);
+  const mapObserverRef = useRef(null);
+  const [usingFallbackView, setUsingFallbackView] = useState(false);
 
   useEffect(() => {
     if (!satData) return;
@@ -32,7 +34,7 @@ export default function SatImageryPanel({ satData, onClose }) {
           
           if (!existingScript) {
             const script = document.createElement('script');
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async`;
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async&libraries=marker`;
             
             await new Promise((resolve, reject) => {
               script.onload = () => {
@@ -74,10 +76,20 @@ export default function SatImageryPanel({ satData, onClose }) {
           throw new Error('google.maps.Map is not available after loading script');
         }
 
+        // Ensure marker library (for AdvancedMarkerElement) is available
+        if (!google.maps.marker?.AdvancedMarkerElement && google.maps.importLibrary) {
+          try {
+            await google.maps.importLibrary('marker');
+          } catch (err) {
+            console.warn('Failed to import marker library, falling back to classic markers.', err);
+          }
+        }
+
         if (!mapRef.current) return;
 
         const { lat, lon } = satData;
         const position = { lat, lng: lon };
+        const vectorMapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID;
 
         // Create map instance (build options defensively in case some constants are missing)
         const mapOptions = {
@@ -90,6 +102,10 @@ export default function SatImageryPanel({ satData, onClose }) {
           streetViewControl: false,
           fullscreenControl: true
         };
+
+        if (vectorMapId) {
+          mapOptions.mapId = vectorMapId;
+        }
 
         // Add mapTypeControlOptions only if the constants are available
         if (google.maps?.MapTypeControlStyle && google.maps?.ControlPosition) {
@@ -108,24 +124,53 @@ export default function SatImageryPanel({ satData, onClose }) {
 
         const map = new google.maps.Map(mapRef.current, mapOptions);
 
-        // Add marker at target position using standard Marker (AdvancedMarkerElement requires map ID)
+        const canUseAdvancedMarkers = Boolean(vectorMapId && google.maps.marker?.AdvancedMarkerElement);
+
+        // Add marker at target position using AdvancedMarkerElement when available
         let marker;
         try {
-          marker = new google.maps.Marker({
-            position,
-            map,
-            title: `${satData.satId} Target Location`,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 8,
-              fillColor: '#FF6B35',
-              fillOpacity: 1,
-              strokeColor: '#FFFFFF',
-              strokeWeight: 2
-            }
-          });
+          if (canUseAdvancedMarkers) {
+            const markerContent = document.createElement('div');
+            markerContent.style.display = 'flex';
+            markerContent.style.alignItems = 'center';
+            markerContent.style.justifyContent = 'center';
+            markerContent.style.width = '16px';
+            markerContent.style.height = '16px';
+            markerContent.style.borderRadius = '9999px';
+            markerContent.style.background = '#FF6B35';
+            markerContent.style.border = '2px solid #FFFFFF';
+            markerContent.style.boxShadow = '0 0 12px rgba(255,107,53,0.6)';
+
+            marker = new google.maps.marker.AdvancedMarkerElement({
+              map,
+              position,
+              title: `${satData.satId} Target Location`,
+              content: markerContent
+            });
+          } else {
+            marker = new google.maps.Marker({
+              position,
+              map,
+              title: `${satData.satId} Target Location`,
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: '#FF6B35',
+                fillOpacity: 1,
+                strokeColor: '#FFFFFF',
+                strokeWeight: 2
+              }
+            });
+          }
         } catch (err) {
           console.warn('Marker creation failed:', err);
+          if (!marker) {
+            try {
+              marker = new google.maps.Marker({ position, map });
+            } catch (fallbackErr) {
+              console.warn('Fallback marker creation failed:', fallbackErr);
+            }
+          }
         }
 
         // Add info window
@@ -142,12 +187,10 @@ export default function SatImageryPanel({ satData, onClose }) {
 
         // Open info window anchored to marker when possible
         try {
-          if (marker?.getPosition) {
+          if (canUseAdvancedMarkers && marker instanceof google.maps.marker.AdvancedMarkerElement) {
+            infoWindow.open({ anchor: marker, map });
+          } else if (marker?.getPosition) {
             infoWindow.open(map, marker);
-          } else if (marker && marker.element) {
-            // AdvancedMarkerElement uses element; pan to position and open infoWindow at map center
-            map.panTo(position);
-            infoWindow.open(map);
           } else {
             infoWindow.open(map);
           }
@@ -156,6 +199,32 @@ export default function SatImageryPanel({ satData, onClose }) {
         }
 
         mapInstanceRef.current = map;
+
+        // Watch for "no imagery" message and fall back to roadmap view automatically
+        if (mapObserverRef.current) {
+          mapObserverRef.current.disconnect();
+        }
+
+        const observer = new MutationObserver(() => {
+          if (!mapRef.current) return;
+          const text = mapRef.current.innerText || '';
+          const hasNoImageryNotice = text.includes('Sorry, we have no imagery here');
+
+          if (hasNoImageryNotice && !map.__fallbackApplied) {
+            map.__fallbackApplied = true;
+            setUsingFallbackView(true);
+            // Zoom out and switch to roadmap so the user sees context
+            const targetZoom = Math.max(3, Math.min(map.getZoom() ?? 14, 6));
+            map.setMapTypeId('roadmap');
+            map.setZoom(targetZoom);
+          } else if (!hasNoImageryNotice && map.__fallbackApplied) {
+            map.__fallbackApplied = false;
+            setUsingFallbackView(false);
+          }
+        });
+
+        observer.observe(mapRef.current, { subtree: true, childList: true });
+        mapObserverRef.current = observer;
         setIsLoading(false);
 
       } catch (err) {
@@ -169,6 +238,10 @@ export default function SatImageryPanel({ satData, onClose }) {
 
     return () => {
       mapInstanceRef.current = null;
+      if (mapObserverRef.current) {
+        mapObserverRef.current.disconnect();
+        mapObserverRef.current = null;
+      }
     };
   }, [satData]);
 
@@ -239,6 +312,12 @@ export default function SatImageryPanel({ satData, onClose }) {
                 Check VITE_GOOGLE_MAPS_API_KEY in .env
               </p>
             </div>
+          </div>
+        )}
+
+        {usingFallbackView && !isLoading && !error && (
+          <div className="absolute top-3 left-3 bg-amber-900/80 border border-amber-500/40 text-amber-100 text-xs px-3 py-2 rounded-md z-10 backdrop-blur">
+            Limited satellite imagery at this location — showing map view for context.
           </div>
         )}
 

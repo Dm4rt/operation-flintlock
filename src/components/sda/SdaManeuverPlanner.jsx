@@ -2,10 +2,11 @@ import React from 'react';
 import { ArrowUp, ArrowDown, ChevronRight, ChevronLeft, RotateCcw, AlertCircle } from 'lucide-react';
 import { 
   MANEUVER_TYPES, 
-  MANEUVER_COSTS, 
-  MANEUVER_DESCRIPTIONS,
+  MANEUVER_COSTS,
   canPerformManeuver,
-  getManeuverRecommendation 
+  getManeuverRecommendation,
+  DEFAULT_MANEUVER_OFFSETS,
+  ensureOffsets 
 } from '../../utils/maneuverLogic';
 
 export default function SdaManeuverPlanner({ satellite, onPlanManeuver, onCommitManeuver, onCancelManeuver, plannedManeuver }) {
@@ -13,17 +14,18 @@ export default function SdaManeuverPlanner({ satellite, onPlanManeuver, onCommit
 
   const recommendation = getManeuverRecommendation(satellite);
   const hasPlannedManeuver = plannedManeuver && plannedManeuver.satelliteId === satellite.id;
-  const defaultOffsets = { altitudeOffset: 0, phaseOffset: 0, inclinationOffset: 0 };
+  const defaultOffsets = DEFAULT_MANEUVER_OFFSETS;
   const plannedOffsets = hasPlannedManeuver
-    ? (plannedManeuver.previewSatellite?.maneuverOffsets || defaultOffsets)
+    ? ensureOffsets(plannedManeuver.previewSatellite?.maneuverOffsets)
     : defaultOffsets;
   const baseOffsets = hasPlannedManeuver
-    ? (plannedManeuver.baseOffsets || defaultOffsets)
+    ? ensureOffsets(plannedManeuver.baseOffsets)
     : defaultOffsets;
   const offsetDeltas = {
     altitude: plannedOffsets.altitudeOffset - baseOffsets.altitudeOffset,
     phase: plannedOffsets.phaseOffset - baseOffsets.phaseOffset,
-    inclination: plannedOffsets.inclinationOffset - baseOffsets.inclinationOffset
+    inclination: plannedOffsets.inclinationOffset - baseOffsets.inclinationOffset,
+    track: plannedOffsets.trackSeconds - baseOffsets.trackSeconds
   };
 
   const maneuvers = [
@@ -61,6 +63,13 @@ export default function SdaManeuverPlanner({ satellite, onPlanManeuver, onCommit
       icon: ChevronLeft,
       color: 'cyan',
       symbol: '⊗'
+    },
+    { 
+      type: MANEUVER_TYPES.PHASE_THRUST, 
+      label: 'Boost', 
+      icon: ChevronRight,
+      color: 'orange',
+      symbol: '⚡'
     }
   ];
 
@@ -154,8 +163,17 @@ export default function SdaManeuverPlanner({ satellite, onPlanManeuver, onCommit
                 Inclination: {offsetDeltas.inclination > 0 ? '+' : ''}{offsetDeltas.inclination}°
               </p>
             )}
+            {offsetDeltas.track !== 0 && (
+              <p className="text-xs text-white">
+                Along-track: {offsetDeltas.track > 0 ? '+' : ''}{Math.round(offsetDeltas.track / 60)} min
+              </p>
+            )}
           </div>
-          <p className="text-xs text-slate-400 mt-2">Preview orbit shown in dashed blue line</p>
+          <p className="text-xs text-slate-400 mt-2">
+            {offsetDeltas.track !== 0
+              ? 'Boost preview shown as glowing ghost target'
+              : 'Preview orbit shown in dashed blue line'}
+          </p>
           <p className="text-xs text-green-400 mt-1">Fuel cost: {satellite.fuelPoints - plannedManeuver.previewSatellite.fuelPoints} FP</p>
         </div>
       )}
@@ -224,6 +242,12 @@ export default function SdaManeuverPlanner({ satellite, onPlanManeuver, onCommit
               <p className="text-white">
                 Inclination: {satellite.maneuverOffsets.inclinationOffset > 0 ? '+' : ''}
                 {satellite.maneuverOffsets.inclinationOffset}°
+              </p>
+            )}
+            {satellite.maneuverOffsets.trackSeconds !== 0 && (
+              <p className="text-white">
+                Along-track: {satellite.maneuverOffsets.trackSeconds > 0 ? '+' : ''}
+                {Math.round(satellite.maneuverOffsets.trackSeconds / 60)} min
               </p>
             )}
           </div>
