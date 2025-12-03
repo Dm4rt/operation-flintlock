@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import SimpleTuner from '../../engine/SimpleTuner';
 import transmissions from '../../data/audioTransmissions.json';
 import useCountdown from '../../hooks/useCountdown';
@@ -18,7 +17,6 @@ const formatFreq = (hz) => {
 const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
 
 export default function SdrAdminPanel({ operationId }) {
-  const navigate = useNavigate();
   const { session, join } = useSession(operationId);
   const socket = useFlintlockSocket(operationId, 'ew', 'Space Ops - EW');
   const { timeLeft } = useCountdown(socket);
@@ -132,39 +130,6 @@ export default function SdrAdminPanel({ operationId }) {
   };
 
   const visualsActive = !isPaused;
-
-  if (!operationStarted) {
-    return (
-      <div className="relative min-h-screen bg-slate-950 text-white flex items-center justify-center">
-        <StarBackground />
-        <div className="relative z-10 bg-slate-900/80 backdrop-blur-sm border-2 border-blue-500/30 rounded-2xl p-12 max-w-lg">
-          <div className="text-center mb-6">
-            <div className="inline-block p-4 bg-blue-500/10 rounded-xl border border-blue-500/30 mb-4">
-              <span className="text-4xl">⚡</span>
-            </div>
-            <h1 className="text-3xl font-bold mb-2 text-white">UPLINK ESTABLISHED</h1>
-            <p className="text-slate-400 text-sm">Awaiting mission initialization...</p>
-          </div>
-          <div className="flex items-center justify-center gap-2 text-emerald-400 text-sm">
-            <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-            <span>Connected to Mission Control</span>
-          </div>
-          <div className="mt-6 pt-6 border-t border-slate-700">
-            <div className="grid grid-cols-2 gap-4 text-center">
-              <div>
-                <p className="text-xs text-slate-500 uppercase mb-1">Role</p>
-                <p className="text-white font-bold">Electronic Warfare</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 uppercase mb-1">Cipher</p>
-                <p className="text-blue-400 font-mono font-bold">{operationId}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="relative min-h-screen bg-slate-950 text-white flex flex-col">

@@ -1,47 +1,41 @@
 /**
  * Firebase Admin SDK Configuration
- * Used for server-side Firebase operations and auth verification
+ * Hybrid: Uses Env Var on Render, Local File on Dev
  */
 
 import admin from 'firebase-admin';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { readFile } from 'fs/promises'; // Import file reading capability
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Initialize Firebase Admin
 let serviceAccount;
 
 try {
-  // Try to load service account from file
-  serviceAccount = JSON.parse(
-    readFileSync(join(__dirname, 'service-account.json'), 'utf8')
-  );
-  console.log('✅ Firebase Admin: Loaded service-account.json');
-} catch (error) {
-  console.warn('Service account key not found, using environment variables');
-  
-  // Fallback to environment variables
-  serviceAccount = {
-    type: 'service_account',
-    project_id: process.env.FIREBASE_PROJECT_ID,
-    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    client_email: process.env.FIREBASE_CLIENT_EMAIL,
-    client_id: process.env.FIREBASE_CLIENT_ID,
-    auth_uri: 'https://accounts.google.com/o/oauth2/auth',
-    token_uri: 'https://oauth2.googleapis.com/token',
-    auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
-    client_x509_cert_url: process.env.FIREBASE_CERT_URL
-  };
+  // 1. PROD: Check if the Render Environment Variable exists
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } 
+  // 2. DEV: If not, fallback to reading the local file
+  else {
+    // 'import.meta.url' gets the current directory of this file
+    // Ensure 'serviceAccountKey.json' matches your actual filename
+    const localKeyPath = new URL('./service-account.json', import.meta.url);
+    
+    // Use await (Top-level await is supported in ES Modules)
+    const fileContent = await readFile(localKeyPath, 'utf-8');
+    serviceAccount = JSON.parse(fileContent);
+  }
+
+} catch (err) {
+  console.error('\n❌ Firebase Admin failed to load service account JSON');
+  console.error('Make sure FIREBASE_SERVICE_ACCOUNT is set (Render) or serviceAccountKey.json exists (Local)\n');
+  console.error(err);
+  process.exit(1); // Stop server if credentials are missing
 }
 
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`
+    // Use optional chaining just in case project_id is missing in a malformed JSON
+    databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`,
   });
 }
 

@@ -68,21 +68,19 @@ export default function SdaDashboard({ sessionCode }) {
     })();
   }, [sessionCode, join]);
 
-  // Initialize satellites in Firebase on first load
+  // Initialize satellites if needed then load them into local state
   useEffect(() => {
     if (!sessionCode) return;
+    let isMounted = true;
 
-    const initSatellites = async () => {
+    const ensureSatellites = async () => {
       try {
-        console.log('Checking for satellites in session:', sessionCode);
         const satellitesRef = collection(db, 'sessions', sessionCode, 'satellites');
-        const snapshot = await getDocs(satellitesRef);
-        
-        console.log('Satellites found:', snapshot.size);
-        
-        // If no satellites exist, initialize from JSON
+        let snapshot = await getDocs(satellitesRef);
+
+        // Seed Firestore with baseline satellites if none exist yet
         if (snapshot.empty) {
-          console.log('Initializing', satellitesData.length, 'satellites in Firebase...');
+          console.log('[SDA] Initializing satellites in Firestore for', sessionCode);
           for (const sat of satellitesData) {
             const satDoc = doc(db, 'sessions', sessionCode, 'satellites', sat.id);
             const data = {
@@ -101,10 +99,26 @@ export default function SdaDashboard({ sessionCode }) {
               },
               lastUpdated: new Date().toISOString()
             };
-            console.log('Creating satellite:', sat.id, data);
             await setDoc(satDoc, data);
           }
-          console.log('Satellites initialized successfully');
+
+          // Re-fetch now that initialization completed
+          snapshot = await getDocs(satellitesRef);
+        }
+
+        const sats = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          sats.push({
+            ...data,
+            id: docSnap.id,
+            currentPosition: propagateSatellite(data.tle)
+          });
+        });
+
+        if (isMounted) {
+          setSatellites(sats);
+          setSelectedSatellite((prev) => prev || sats[0] || null);
         }
       } catch (error) {
         console.error('Failed to initialize satellites:', error);
@@ -115,35 +129,12 @@ export default function SdaDashboard({ sessionCode }) {
       }
     };
 
-    initSatellites();
-  }, [sessionCode]);
+    ensureSatellites();
 
-  // Load initial satellites from Firebase (one-time)
-  useEffect(() => {
-    if (!sessionCode) return;
-
-    const loadSatellites = async () => {
-      const satellitesRef = collection(db, 'sessions', sessionCode, 'satellites');
-      const snapshot = await getDocs(satellitesRef);
-      const sats = [];
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const position = propagateSatellite(data.tle);
-        sats.push({
-          ...data,
-          id: doc.id,
-          currentPosition: position
-        });
-      });
-      
-      setSatellites(sats);
-      if (sats.length > 0 && !selectedSatellite) {
-        setSelectedSatellite(sats[0]);
-      }
+    return () => {
+      isMounted = false;
     };
-
-    loadSatellites();
-  }, [sessionCode]);
+  }, [sessionCode, addInject]);
 
   // Subscribe to satellite updates via Socket.IO
   useEffect(() => {
@@ -330,38 +321,59 @@ export default function SdaDashboard({ sessionCode }) {
   const handleCommitManeuver = async () => {
     if (!plannedManeuver) return;
     
-    try {
-      const updateData = {
-        maneuverOffsets: plannedManeuver.previewSatellite.maneuverOffsets,
-        fuelPoints: plannedManeuver.previewSatellite.fuelPoints,
-        lastManeuver: plannedManeuver.previewSatellite.lastManeuver,
-        lastUpdated: new Date().toISOString()
+    const updateData = {
+      maneuverOffsets: plannedManeuver.previewSatellite.maneuverOffsets,
+      fuelPoints: plannedManeuver.previewSatellite.fuelPoints,
+      lastManeuver: plannedManeuver.previewSatellite.lastManeuver,
+      lastUpdated: new Date().toISOString()
+    };
+
+    const applyLocalUpdate = () => {
+      const updatedSatellite = {
+        ...plannedManeuver.previewSatellite,
+        id: plannedManeuver.satelliteId,
+        ...updateData
       };
-      
+
+      setSatellites((prev) => {
+        const next = prev.map((sat) => (sat.id === plannedManeuver.satelliteId ? { ...sat, ...updatedSatellite } : sat));
+        if (socket.isConnected) {
+          socket.emitSatelliteUpdate(next);
+        }
+        return next;
+      });
+
+      setSelectedSatellite((current) => (current?.id === plannedManeuver.satelliteId ? { ...current, ...updatedSatellite } : current));
+      selectedSatelliteRef.current = updatedSatellite;
+    };
+
+    let commitSucceeded = false;
+
+    try {
       console.log('Committing maneuver to Firebase:', plannedManeuver.satelliteId, {
         offsets: JSON.stringify(updateData.maneuverOffsets),
         fuel: updateData.fuelPoints
       });
-      
+
       const satDoc = doc(db, 'sessions', sessionCode, 'satellites', plannedManeuver.satelliteId);
       await updateDoc(satDoc, updateData);
-      
+
       console.log('Maneuver committed successfully');
-      
-      addInject({
-        type: 'maneuver',
-        message: `${selectedSatellite?.name || 'Satellite'} executing ${plannedManeuver.type.replace('_', ' ')} maneuver`
-      });
-      
-      // Clear preview AFTER Firebase update completes
-      setPlannedManeuver(null);
+      commitSucceeded = true;
     } catch (error) {
       console.error('Commit maneuver error:', error);
       addInject({
         type: 'error',
         message: `Failed to commit maneuver: ${error.message}`
       });
-      // Still clear on error
+    } finally {
+      applyLocalUpdate();
+
+      addInject({
+        type: commitSucceeded ? 'maneuver' : 'warning',
+        message: `${selectedSatellite?.name || 'Satellite'} executing ${plannedManeuver.type.replace('_', ' ')} maneuver`
+      });
+
       setPlannedManeuver(null);
     }
   };

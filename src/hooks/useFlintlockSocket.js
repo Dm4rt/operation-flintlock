@@ -26,9 +26,8 @@ export function useFlintlockSocket(sessionId, teamId, teamName) {
     // Create socket instance
     const socket = io(SOCKET_URL, {
       auth: {
-        // You can add Firebase auth token here if needed
-        // token: await auth.currentUser?.getIdToken()
       },
+      withCredentials: true,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,

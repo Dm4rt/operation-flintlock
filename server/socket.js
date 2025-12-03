@@ -6,10 +6,20 @@
 import { Server } from 'socket.io';
 import { admin } from './firebase-admin.js';
 
+// === NEW BLOCK ===
+// Build allowed origins list
+const rawOrigins =
+  process.env.CORS_ORIGIN ||
+  process.env.CLIENT_URL ||
+  'http://localhost:5173';
+
+const allowedOrigins = rawOrigins.split(',').map(o => o.trim());
+// ==================
+
 export function initializeSockets(httpServer) {
   const io = new Server(httpServer, {
     cors: {
-      origin: process.env.CLIENT_URL || 'http://localhost:5173',
+      origin: allowedOrigins,   // <--- updated
       methods: ['GET', 'POST'],
       credentials: true
     },
