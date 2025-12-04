@@ -167,11 +167,14 @@ export function initializeSockets(httpServer) {
     // MISSION COUNTDOWN (Admin → All)
     // ========================================
     socket.on('mission:tick', (data) => {
-      const { sessionId, timeLeft, isRunning } = data;
+      const { sessionId, timeLeft, isRunning, currentRound, totalRounds, roundDurationMinutes } = data;
       
       io.to(`session:${sessionId}`).emit('mission:tick', {
         timeLeft,
         isRunning,
+        currentRound,
+        totalRounds,
+        roundDurationMinutes,
         timestamp: Date.now()
       });
     });

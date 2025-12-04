@@ -2,6 +2,7 @@ import React from "react";
 import { TEAMS, ADMIN_ICON } from "../utils/constants";
 import TeamCard from "../components/TeamCard";
 import StarBackground from "../components/StarBackground";
+import SignOutButton from "../components/auth/SignOutButton";
 import { useNavigate } from "react-router-dom";
 
 export default function WelcomeScreen() {
@@ -11,7 +12,11 @@ export default function WelcomeScreen() {
         <div className="relative z-20 flex flex-col items-center space-y-12 py-12 px-4 max-w-7xl mx-auto w-full animate-fade-in">
             <StarBackground className="absolute inset-0 -z-10" />
 
-            <div className="text-center space-y-6">
+                <div className="absolute top-4 right-4">
+                    <SignOutButton />
+                </div>
+
+                <div className="text-center space-y-6">
                 <h1 className="text-6xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-white to-blue-400 tracking-tight drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]">
                     OPERATION <span className="text-blue-500">FLINTLOCK</span>
                 </h1>

@@ -20,5 +20,93 @@
     "minDb": -120,
     "maxDb": -20,
     "peakStrength": 0.5
+  },
+  {
+    "id": "foreign-radio-aurora",
+    "name": "Foreign Shortwave Relay",
+    "description": "Regional shortwave program used for OSINT cues and language injects.",
+    "audioPath": "/audio/foreign_radio1.mp3",
+    "frequencyHz": 88400000,
+    "widthHz": 60000,
+    "minDb": -130,
+    "maxDb": -42,
+    "peakStrength": 0.6
+  },
+  {
+    "id": "mil-uhf-net-1",
+    "name": "MIL UHF Net 1",
+    "description": "Encrypted UHF net carrying short burst traffic for strike packages.",
+    "audioPath": "/audio/mil_1.mp3",
+    "frequencyHz": 118200000,
+    "widthHz": 70000,
+    "minDb": -118,
+    "maxDb": -22,
+    "peakStrength": 0.7
+  },
+  {
+    "id": "mil-uhf-net-2",
+    "name": "MIL UHF Net 2",
+    "description": "Line-of-sight coordination net for EW elements.",
+    "audioPath": "/audio/mil_2.mp3",
+    "frequencyHz": 122700000,
+    "widthHz": 80000,
+    "minDb": -116,
+    "maxDb": -26,
+    "peakStrength": 0.65
+  },
+  {
+    "id": "mil-data-link-a",
+    "name": "MIL Data Link A",
+    "description": "Constant low-rate telemetry stream.",
+    "audioPath": "/audio/mil_3.mp3",
+    "frequencyHz": 125400000,
+    "widthHz": 90000,
+    "minDb": -122,
+    "maxDb": -24,
+    "peakStrength": 0.72
+  },
+  {
+    "id": "mil-satcom-downlink",
+    "name": "MIL UHF Satcom Downlink",
+    "description": "Satellite relay returning compressed voice blocks.",
+    "audioPath": "/audio/mil_4.mp3",
+    "frequencyHz": 128600000,
+    "widthHz": 100000,
+    "minDb": -125,
+    "maxDb": -30,
+    "peakStrength": 0.78
+  },
+  {
+    "id": "mil-guard-channel",
+    "name": "MIL Emergency Guard",
+    "description": "Guard channel simulation for emergency notifications.",
+    "audioPath": "/audio/mil_5.mp3",
+    "frequencyHz": 94600000,
+    "widthHz": 60000,
+    "minDb": -110,
+    "maxDb": -18,
+    "peakStrength": 0.92
+  },
+  {
+    "id": "rock-radio-bravo",
+    "name": "Rock Radio Station Bravo",
+    "description": "Civilian FM broadcast creating clutter around the target band.",
+    "audioPath": "/audio/rock_radio2.mp3",
+    "frequencyHz": 108900000,
+    "widthHz": 200000,
+    "minDb": -95,
+    "maxDb": -12,
+    "peakStrength": 0.95
+  },
+  {
+    "id": "wideband-static",
+    "name": "Wideband Static Burst",
+    "description": "Unidentified broadband interference used as training noise.",
+    "audioPath": "/audio/static.mp3",
+    "frequencyHz": 90200000,
+    "widthHz": 500000,
+    "minDb": -108,
+    "maxDb": -35,
+    "peakStrength": 0.55
   }
 ]

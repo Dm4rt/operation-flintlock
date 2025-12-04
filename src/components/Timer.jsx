@@ -1,7 +1,8 @@
 import React, { useEffect } from "react";
-import { Play, Pause, RotateCcw, ChevronUp, ChevronDown } from "lucide-react";
+import { RotateCcw, ChevronUp, ChevronDown } from "lucide-react";
 
-export default function Timer({ timeLeft, setTimeLeft, isRunning, setIsRunning, addLog, duration }) {
+export default function Timer({ timeLeft, setTimeLeft, setManualTimeLeft, isRunning, setIsRunning, addLog, defaultSeconds = 0 }) {
+    const manualSetter = setManualTimeLeft || setTimeLeft;
 
     // local ticking: when running, decrement timeLeft every second
     useEffect(() => {
@@ -33,7 +34,7 @@ export default function Timer({ timeLeft, setTimeLeft, isRunning, setIsRunning, 
                     <button
                         onClick={() => {
                             if (isRunning) return;
-                            setTimeLeft(prev => prev + 60);
+                            manualSetter(prev => prev + 60);
                         }}
                         className="p-1 bg-slate-800 rounded"
                         aria-label="increase minutes"
@@ -46,7 +47,7 @@ export default function Timer({ timeLeft, setTimeLeft, isRunning, setIsRunning, 
                     <button
                         onClick={() => {
                             if (isRunning) return;
-                            setTimeLeft(prev => Math.max(0, prev - 60));
+                            manualSetter(prev => Math.max(0, prev - 60));
                         }}
                         className="p-1 bg-slate-800 rounded"
                         aria-label="decrease minutes"
@@ -61,7 +62,7 @@ export default function Timer({ timeLeft, setTimeLeft, isRunning, setIsRunning, 
                     <button
                         onClick={() => {
                             if (isRunning) return;
-                            setTimeLeft(prev => Math.min(prev + 1, 24 * 60 * 60));
+                            manualSetter(prev => Math.min(prev + 1, 24 * 60 * 60));
                         }}
                         className="p-1 bg-slate-800 rounded"
                         aria-label="increase seconds"
@@ -74,7 +75,7 @@ export default function Timer({ timeLeft, setTimeLeft, isRunning, setIsRunning, 
                     <button
                         onClick={() => {
                             if (isRunning) return;
-                            setTimeLeft(prev => Math.max(0, prev - 1));
+                            manualSetter(prev => Math.max(0, prev - 1));
                         }}
                         className="p-1 bg-slate-800 rounded"
                         aria-label="decrease seconds"
@@ -87,7 +88,7 @@ export default function Timer({ timeLeft, setTimeLeft, isRunning, setIsRunning, 
             <div className="flex gap-3 w-full justify-center">
                 <button
                     onClick={() => {
-                        setTimeLeft(duration * 60);
+                        manualSetter(defaultSeconds);
                         setIsRunning(false);
                         addLog("Timer Reset");
                     }}

@@ -15,7 +15,7 @@ export const TEAMS = [
         id: 'mission_cmd',
         name: 'Mission Command',
         icon: Command,
-        description: 'Central Coordination (USSPACECOM)',
+        description: 'Central Coordination and Command',
         color: 'text-blue-400',
         hex: '#60A5FA',
         borderColor: 'border-blue-600',

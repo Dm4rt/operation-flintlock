@@ -147,8 +147,8 @@ export function useFlintlockSocket(sessionId, teamId, teamName) {
   }, [emit]);
 
   // Mission countdown tick (Admin)
-  const emitMissionTick = useCallback((timeLeft, isRunning) => {
-    return emit('mission:tick', { timeLeft, isRunning });
+  const emitMissionTick = useCallback((payload) => {
+    return emit('mission:tick', payload);
   }, [emit]);
 
   // Push inject (Admin)

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { TEAMS } from "../utils/constants";
+import SignOutButton from "../components/auth/SignOutButton";
 
 export default function JoinScreen() {
   const { teamId } = useParams();
@@ -10,6 +11,9 @@ export default function JoinScreen() {
 
   return (
     <div className="flex items-center justify-center min-h-[60vh] px-4 relative z-10">
+      <div className="absolute top-6 right-6">
+        <SignOutButton />
+      </div>
       <div className="flex flex-col space-y-6 p-10 bg-slate-900/90 rounded-2xl border border-slate-700 max-w-md w-full">
         
         <div className="text-center space-y-4">

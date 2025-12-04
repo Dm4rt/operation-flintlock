@@ -9,6 +9,7 @@ import SdrAdminPanel from "../components/sdr/SdrAdminPanel";
 import CyberTerminal from "../components/cyber/CyberTerminal";
 import IntelDashboard from "../components/intel/IntelDashboard";
 import CommandDashboard from "../components/cmd/CommandDashboard";
+import SignOutButton from "../components/auth/SignOutButton";
 
 export default function UserDashboard() {
   const { teamId, code } = useParams();
@@ -51,9 +52,7 @@ export default function UserDashboard() {
   // Check if operation has started
   const operationStarted = session?.operationStarted || false;
 
-  // Show operational interface when operation starts
-  if (operationStarted) {
-    // SDA Team gets the full orbital operations dashboard
+  const renderActivePanel = () => {
     if (teamId === 'sda') {
       return <SdaDashboard sessionCode={code} />;
     }
@@ -74,11 +73,9 @@ export default function UserDashboard() {
       return <CommandDashboard operationId={code} />;
     }
 
-    // Other teams get placeholder interface (to be built later)
     return (
       <div className="flex flex-col items-center justify-center min-h-screen px-4 relative z-10">
         <div className="max-w-5xl w-full space-y-8">
-          {/* Header */}
           <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-6 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <team.icon className={`w-12 h-12 ${team.color}`} />
@@ -93,7 +90,6 @@ export default function UserDashboard() {
             </div>
           </div>
 
-          {/* Operational Interface Placeholder */}
           <div className="bg-slate-900/60 rounded-xl border border-slate-800 p-12 min-h-[500px] flex items-center justify-center">
             <div className="text-center space-y-4">
               <div className={`w-24 h-24 mx-auto rounded-full ${team.color.replace('text-', 'bg-')}/20 flex items-center justify-center`}>
@@ -113,11 +109,25 @@ export default function UserDashboard() {
         </div>
       </div>
     );
+  };
+
+  if (operationStarted) {
+    return (
+      <div className="relative min-h-screen">
+        <div className="absolute top-6 right-6 z-50">
+          <SignOutButton />
+        </div>
+        {renderActivePanel()}
+      </div>
+    );
   }
 
   // Waiting room before operation starts
   return (
     <div className="flex items-center justify-center min-h-[60vh] px-4 relative z-10">
+      <div className="absolute top-6 right-6">
+        <SignOutButton />
+      </div>
       <div className="p-12 bg-slate-900 rounded-3xl border border-slate-800 max-w-3xl text-center space-y-8">
         
         <div className="space-y-2">
