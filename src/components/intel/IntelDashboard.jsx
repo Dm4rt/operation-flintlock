@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import StarBackground from '../StarBackground';
 import SatImageryPanel from './SatImageryPanel';
+import OSINTChallenge from './OSINTChallenge';
 import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
+import { Terminal } from 'lucide-react';
 
 const ANALYSIS_TOOLS = [
   { id: 'sat-imagery', name: 'Satellite Imagery', icon: '🛰️', description: 'Live satellite view from SDA ISR asset' },
-  { id: 'reverse-image', name: 'Reverse Image Search', icon: '🔍', description: 'Search image databases for matches' },
-  { id: 'geolocation', name: 'Geolocation Tool', icon: '🌍', description: 'Analyze location data and terrain' }
+  { id: 'osint-challenge', name: 'OSINT Challenge', icon: '🔎', description: 'Oracle Island investigation challenge' }
 ];
 
 export default function IntelDashboard({ operationId }) {
@@ -17,6 +18,14 @@ export default function IntelDashboard({ operationId }) {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [imageryTimeoutId, setImageryTimeoutId] = useState(null);
   const [imageryError, setImageryError] = useState(null);
+  const [injects, setInjects] = useState([
+    {
+      id: 1,
+      timestamp: new Date(),
+      type: 'system',
+      message: 'Intel System Online - Analysis tools ready'
+    }
+  ]);
 
   const handleToolClick = async (tool) => {
     setSelectedTool(tool);
@@ -28,6 +37,22 @@ export default function IntelDashboard({ operationId }) {
       await loadSatImagery();
     }
   };
+
+  // Listen for admin injects via Socket.IO
+  useEffect(() => {
+    if (!socket.isConnected) return;
+
+    const unsubscribe = socket.on('inject:new', ({ inject }) => {
+      console.log('[Intel] Received new inject:', inject);
+      setInjects(prev => [{
+        id: Date.now(),
+        timestamp: new Date(),
+        ...inject
+      }, ...prev]);
+    });
+
+    return unsubscribe;
+  }, [socket]);
 
   const loadSatImagery = () => {
     // Clear any existing timeout
@@ -85,21 +110,6 @@ export default function IntelDashboard({ operationId }) {
       unsubscribeError();
     };
   }, [socket, imageryTimeoutId]);
-
-  const runAnalysis = () => {
-    if (!selectedTool) return;
-
-    let result = '';
-    switch (selectedTool.id) {
-      case 'reverse-image':
-        result = `Reverse image search results:\n\n✓ 3 potential matches found\n✓ Location: Central Asia region\n✓ Similar structures identified in database\n✓ Confidence: 78%`;
-        break;
-      case 'geolocation':
-        result = `Geolocation Analysis:\n\nCoordinates: 34.5°N, 69.2°E\nCountry: Afghanistan\nNearest city: Kabul (45km)\nTerrain: Mountainous\nElevation: 2,100m`;
-        break;
-    }
-    setAnalysisResult(result);
-  };
 
   return (
     <div className="relative min-h-screen bg-slate-950 text-white flex flex-col">
@@ -164,10 +174,13 @@ export default function IntelDashboard({ operationId }) {
 
           {/* Main Panel - Analysis Console */}
           <main className="flex-1 bg-[#04060c] overflow-y-auto">
-            {selectedTool ? (
-              <div className="p-6">
-                {/* Satellite Imagery Tool */}
-                {selectedTool.id === 'sat-imagery' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
+              {/* Main Content Area - 2/3 width */}
+              <div className="lg:col-span-2">
+                {selectedTool ? (
+                  <div>
+                    {/* Satellite Imagery Tool */}
+                    {selectedTool.id === 'sat-imagery' && (
                   <div>
                     {imageryError && (
                       <div className="mb-4 p-4 bg-red-900/20 border border-red-500/50 rounded-lg">
@@ -214,53 +227,91 @@ export default function IntelDashboard({ operationId }) {
                   </div>
                 )}
 
-                {/* Other Analysis Tools */}
-                {selectedTool.id !== 'sat-imagery' && (
-                  <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl p-6">
-                    <div className="border-b border-slate-800 pb-4 mb-6">
-                      <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                        <span className="text-3xl">{selectedTool.icon}</span>
-                        <span>{selectedTool.name}</span>
-                      </h2>
-                      <p className="text-sm text-slate-400 mt-2">{selectedTool.description}</p>
-                    </div>
-
-                    <div className="mb-6">
-                      <button
-                        onClick={runAnalysis}
-                        className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors"
-                      >
-                        Run Analysis
-                      </button>
-                    </div>
-
-                    {analysisResult && (
-                      <div className="bg-slate-900/50 rounded-lg p-6 border border-blue-500/30">
-                        <pre className="text-sm text-slate-300 font-mono whitespace-pre-wrap leading-relaxed">
-                          {analysisResult}
-                        </pre>
+                {/* OSINT Challenge Tool */}
+                {selectedTool.id === 'osint-challenge' && (
+                  <OSINTChallenge />
+                )}
+                  </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-24 h-24 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span className="text-5xl">🔍</span>
                       </div>
-                    )}
-
-                    {!analysisResult && (
-                      <div className="bg-slate-900/30 rounded-lg p-8 text-center">
-                        <p className="text-slate-500">No analysis results yet. Click "Run Analysis" to begin.</p>
-                      </div>
-                    )}
+                      <h3 className="text-xl font-semibold text-white mb-2">No Tool Selected</h3>
+                      <p className="text-slate-400">Select an analysis tool from the sidebar to begin</p>
+                    </div>
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="h-full flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-24 h-24 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <span className="text-5xl">🔍</span>
+
+              {/* Inject Feed Sidebar - 1/3 width */}
+              <div className="lg:col-span-1">
+                <div className="bg-slate-950 rounded-xl border border-slate-800 p-6 sticky top-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-2">
+                      <Terminal className="w-5 h-5 text-purple-500" />
+                      <h3 className="font-bold text-white">Intel Injects</h3>
+                    </div>
+                    <span className="text-xs text-slate-500 bg-slate-900 px-2 py-1 rounded">
+                      {injects.length}
+                    </span>
                   </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">No Tool Selected</h3>
-                  <p className="text-slate-400">Select an analysis tool from the sidebar to begin</p>
+
+                  <div className="space-y-4 max-h-[calc(100vh-16rem)] overflow-y-auto">
+                    {injects.length === 0 ? (
+                      <p className="text-slate-500 text-sm italic text-center py-8">
+                        No injects received yet
+                      </p>
+                    ) : (
+                      injects.map((inject) => (
+                        <div
+                          key={inject.id}
+                          className={`rounded-lg p-4 border ${
+                            inject.type === 'system'
+                              ? 'bg-slate-900/50 border-slate-800'
+                              : inject.type === 'image'
+                              ? 'bg-purple-900/20 border-purple-500/30'
+                              : inject.type === 'alert'
+                              ? 'bg-red-900/20 border-red-500/30'
+                              : 'bg-blue-900/20 border-blue-500/30'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <span className={`text-xs font-semibold uppercase ${
+                              inject.type === 'system'
+                                ? 'text-slate-400'
+                                : inject.type === 'image'
+                                ? 'text-purple-400'
+                                : inject.type === 'alert'
+                                ? 'text-red-400'
+                                : 'text-blue-400'
+                            }`}>
+                              {inject.type}
+                            </span>
+                            <span className="text-xs text-slate-500 font-mono">
+                              {inject.timestamp.toLocaleTimeString('en-US', { hour12: false })}
+                            </span>
+                          </div>
+                          <p className="text-white text-sm leading-relaxed">
+                            {inject.message}
+                          </p>
+                          {inject.imageUrl && (
+                            <div className="mt-3 border border-slate-700 rounded overflow-hidden">
+                              <img 
+                                src={inject.imageUrl} 
+                                alt="Intel inject" 
+                                className="w-full h-auto"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
           </main>
         </div>
       </div>

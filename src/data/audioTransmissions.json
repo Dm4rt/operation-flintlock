@@ -108,5 +108,101 @@
     "minDb": -108,
     "maxDb": -35,
     "peakStrength": 0.55
+  },
+  {
+    "id": "enemy-signal-1",
+    "name": "Enemy Signal Alpha",
+    "description": "Hostile communications signal - Target for jamming.",
+    "audioPath": "/audio/flintstone_signal.mp3",
+    "frequencyHz": 96500000,
+    "widthHz": 80000,
+    "minDb": -115,
+    "maxDb": -28,
+    "peakStrength": 0.68
+  },
+  {
+    "id": "enemy-signal-2",
+    "name": "Enemy Signal Bravo",
+    "description": "Hostile communications signal - Target for jamming.",
+    "audioPath": "/audio/flintstone_signal.mp3",
+    "frequencyHz": 112400000,
+    "widthHz": 70000,
+    "minDb": -118,
+    "maxDb": -25,
+    "peakStrength": 0.72
+  },
+  {
+    "id": "enemy-signal-3",
+    "name": "Enemy Signal Charlie",
+    "description": "Hostile communications signal - Target for jamming.",
+    "audioPath": "/audio/flintstone_signal.mp3",
+    "frequencyHz": 119800000,
+    "widthHz": 80000,
+    "minDb": -120,
+    "maxDb": -30,
+    "peakStrength": 0.65
+  },
+  {
+    "id": "enemy-signal-4",
+    "name": "Enemy Signal Delta",
+    "description": "Hostile communications signal - Target for jamming.",
+    "audioPath": "/audio/flintstone_signal.mp3",
+    "frequencyHz": 127200000,
+    "widthHz": 70000,
+    "minDb": -112,
+    "maxDb": -22,
+    "peakStrength": 0.75
+  },
+  {
+    "id": "jammer-1",
+    "name": "Jamming Signal 1",
+    "description": "EW jamming transmission - inactive until deployed.",
+    "audioPath": "/audio/jamming.mp3",
+    "frequencyHz": 50000000,
+    "widthHz": 180000,
+    "minDb": -120,
+    "maxDb": -20,
+    "peakStrength": 0.85,
+    "isJammer": true,
+    "active": false
+  },
+  {
+    "id": "jammer-2",
+    "name": "Jamming Signal 2",
+    "description": "EW jamming transmission - inactive until deployed.",
+    "audioPath": "/audio/jamming.mp3",
+    "frequencyHz": 51000000,
+    "widthHz": 180000,
+    "minDb": -120,
+    "maxDb": -20,
+    "peakStrength": 0.85,
+    "isJammer": true,
+    "active": false
+  },
+  {
+    "id": "jammer-3",
+    "name": "Jamming Signal 3",
+    "description": "EW jamming transmission - inactive until deployed.",
+    "audioPath": "/audio/jamming.mp3",
+    "frequencyHz": 52000000,
+    "widthHz": 180000,
+    "minDb": -120,
+    "maxDb": -20,
+    "peakStrength": 0.85,
+    "isJammer": true,
+    "active": false
+  },
+  {
+    "id": "jammer-4",
+    "name": "Jamming Signal 4",
+    "description": "EW jamming transmission - inactive until deployed.",
+    "audioPath": "/audio/jamming.mp3",
+    "frequencyHz": 53000000,
+    "widthHz": 180000,
+    "minDb": -120,
+    "maxDb": -20,
+    "peakStrength": 0.85,
+    "isJammer": true,
+    "active": false
   }
 ]

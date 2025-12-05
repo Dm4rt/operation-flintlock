@@ -46,8 +46,9 @@ export default class SimpleTuner {
     this.masterGain.gain.value = this.volume;
     this.masterGain.connect(this.context.destination);
 
-    // Preload static + all transmission audio
+    // Preload static + all transmission audio + jamming audio
     await this.loadBuffer(STATIC_PATH);
+    await this.loadBuffer('/audio/jamming.mp3'); // Preload jamming audio
     await Promise.all(transmissions.map(t => this.loadBuffer(t.audioPath)));
     this.startStatic();
   }
@@ -115,8 +116,9 @@ export default class SimpleTuner {
       this.pausedStaticLevel = this.staticGain.gain.value;
       this.staticGain.gain.setTargetAtTime(0, now, 0.05);
     }
-    this.signalNodes.forEach((node) => {
-      node.gain.gain.setTargetAtTime(MIN_GAIN, now, 0.05);
+    // Stop all signal nodes when muted
+    this.signalNodes.forEach((node, id) => {
+      this.stopSignal(id, now);
     });
   }
 
@@ -136,8 +138,9 @@ export default class SimpleTuner {
   /**
    * Update tuning parameters and recalculate what should be audible.
    * Now uses gradual fade: as you get closer, static fades out and signal fades in.
+   * Also handles jamming: if signals overlap, highest peakStrength wins.
    */
-  updateTuning({ centerFreq, bandwidthHz, minDb, maxDb }) {
+  async updateTuning({ centerFreq, bandwidthHz, minDb, maxDb, allSignals }) {
     this.centerFreq = centerFreq ?? this.centerFreq;
     this.bandwidthHz = bandwidthHz ?? this.bandwidthHz;
     this.minDb = minDb ?? this.minDb;
@@ -157,45 +160,91 @@ export default class SimpleTuner {
       return;
     }
 
-    // For each transmission, compute a proximity score (0 = far, 1 = perfect)
-    // Use tighter tolerances so signal is only clear when settings are very close
+    // Use provided signals array (includes jammers) or fallback to transmissions
+    const allSigs = allSignals || transmissions;
+    
+    // Separate jammers from regular signals
+    const activeJammers = allSigs.filter(s => s.isJammer && s.active);
+    const regularSignals = allSigs.filter(s => !s.isJammer);
+
+    console.log('[Tuner] Processing', regularSignals.length, 'signals,', activeJammers.length, 'active jammers');
+    
+    // Check if current tuning overlaps with any active jammer
+    let jammingActive = null;
+    for (const jammer of activeJammers) {
+      const freqDiff = Math.abs(this.centerFreq - jammer.frequencyHz);
+      const combinedBandwidth = (this.bandwidthHz + jammer.widthHz) / 2;
+      
+      if (freqDiff < combinedBandwidth * 0.5) {
+        // We're tuned to a jammed frequency
+        jammingActive = jammer;
+        console.log('[Tuner] Jamming active at', jammer.frequencyHz, 'Hz');
+        break;
+      }
+    }
+    
+    const signalsToPlay = new Set();
     let bestProximity = 0;
-    transmissions.forEach(tx => {
-      const freqError = Math.abs(this.centerFreq - tx.frequencyHz);
-      const bwError = Math.abs(this.bandwidthHz - tx.widthHz);
-      
-      // Much tighter tolerances - require more precise tuning
-      const freqTolerance = tx.widthHz * 0.3; // was 0.6, now much tighter
-      const bwTolerance = tx.widthHz * 0.15; // was 0.25, now much tighter
-
-      const freqScore = Math.max(0, 1 - freqError / freqTolerance);
-      const bwScore = Math.max(0, 1 - bwError / bwTolerance);
-      
-      // Make minDb and maxDb much more strict - need to be very close
-      const minError = Math.max(0, tx.minDb - this.minDb);
-      const maxError = Math.max(0, this.maxDb - tx.maxDb);
-      const minScore = Math.max(0, 1 - minError / 20); // was binary 1 or 0.2, now gradual
-      const maxScore = Math.max(0, 1 - maxError / 20); // was binary 1 or 0.2, now gradual
-
-      const rawProximity = freqScore * bwScore * minScore * maxScore;
-      
-      // Apply even steeper curve: only near-perfect settings become audible
-      const proximity = Math.pow(rawProximity, 4); // was 3, now 4 for steeper falloff
-      bestProximity = Math.max(bestProximity, proximity);
-
-      if (proximity > 0.05) {
-        // Start playing if not already
-        this.ensureSignalPlaying(tx, now);
-        // Fade signal in based on proximity
-        const node = this.signalNodes.get(tx.id);
-        if (node) {
-          // Need much higher proximity to hear signal clearly
-          const targetGain = proximity < 0.8 ? MIN_GAIN : Math.min(0.85, (proximity - 0.75) * 3.4);
-          node.gain.gain.setTargetAtTime(targetGain, now, 0.15);
+    
+    // If jamming is active, ONLY play the jamming audio, mute everything else
+    if (jammingActive) {
+      // Stop all regular signals
+      regularSignals.forEach(sig => {
+        const existing = this.signalNodes.get(sig.id);
+        if (existing) {
+          this.stopSignal(sig.id, now);
         }
-      } else {
-        // Stop signal if too far
-        this.stopSignal(tx.id, now);
+      });
+      
+      // Play only the jamming audio
+      signalsToPlay.add(jammingActive.id);
+      await this.ensureSignalPlaying(jammingActive, now, jammingActive.audioPath);
+      
+      const node = this.signalNodes.get(jammingActive.id);
+      if (node) {
+        node.gain.gain.setTargetAtTime(0.7, now, 0.15);
+      }
+      bestProximity = 0.9; // High proximity to reduce static
+    } else {
+      // No jamming, process regular signals normally
+      for (const tx of regularSignals) {
+        const freqError = Math.abs(this.centerFreq - tx.frequencyHz);
+        const bwError = Math.abs(this.bandwidthHz - tx.widthHz);
+        
+        const freqTolerance = tx.widthHz * 0.3;
+        const bwTolerance = tx.widthHz * 0.15;
+
+        const freqScore = Math.max(0, 1 - freqError / freqTolerance);
+        const bwScore = Math.max(0, 1 - bwError / bwTolerance);
+        
+        const minError = Math.max(0, tx.minDb - this.minDb);
+        const maxError = Math.max(0, this.maxDb - tx.maxDb);
+        const minScore = Math.max(0, 1 - minError / 20);
+        const maxScore = Math.max(0, 1 - maxError / 20);
+
+        const rawProximity = freqScore * bwScore * minScore * maxScore;
+        const proximity = Math.pow(rawProximity, 4);
+        bestProximity = Math.max(bestProximity, proximity);
+
+        const shouldPlay = proximity > 0.05;
+
+        if (shouldPlay) {
+          signalsToPlay.add(tx.id);
+          await this.ensureSignalPlaying(tx, now, tx.audioPath);
+          
+          const node = this.signalNodes.get(tx.id);
+          if (node) {
+            const targetGain = proximity < 0.8 ? MIN_GAIN : Math.min(0.85, (proximity - 0.75) * 3.4);
+            node.gain.gain.setTargetAtTime(targetGain, now, 0.15);
+          }
+        }
+      }
+    }
+    
+    // Stop any signals that shouldn't be playing
+    this.signalNodes.forEach((node, id) => {
+      if (!signalsToPlay.has(id)) {
+        this.stopSignal(id, now);
       }
     });
 
@@ -207,22 +256,28 @@ export default class SimpleTuner {
     }
   }
 
-  ensureSignalPlaying(tx, now) {
+  async ensureSignalPlaying(tx, now, audioPath = null) {
+    const audioToUse = audioPath || tx.audioPath;
+    
     // Check if already playing AND source is still valid
     const existing = this.signalNodes.get(tx.id);
-    if (existing && existing.source) {
-      // Verify the source hasn't been stopped/disconnected
-      // If it has a valid gain node connected, we're good
-      try {
-        // Source is still valid if we can access its properties
-        if (existing.source.buffer) return; // already playing
-      } catch (e) {
-        // Source was stopped, clean it up
-        this.signalNodes.delete(tx.id);
-      }
+    if (existing && existing.source && existing.audioPath === audioToUse) {
+      // Already playing and valid, don't create duplicate
+      return;
+    }
+    
+    // Clean up any existing but disconnected source
+    if (existing) {
+      this.stopSignal(tx.id, now);
+    }
+    
+    // Make sure audio buffer is loaded (especially for dynamic jammers)
+    if (!this.bufferCache.has(audioToUse)) {
+      console.log('[Tuner] Loading audio for', tx.name, ':', audioToUse);
+      await this.loadBuffer(audioToUse);
     }
 
-    const buf = this.bufferCache.get(tx.audioPath);
+    const buf = this.bufferCache.get(audioToUse);
     if (!buf) return;
 
     const src = this.context.createBufferSource();
@@ -243,7 +298,7 @@ export default class SimpleTuner {
 
     // Don't auto-fade in here; let updateTuning control gain based on proximity
 
-    this.signalNodes.set(tx.id, { source: src, gain, buffer: buf });
+    this.signalNodes.set(tx.id, { source: src, gain, buffer: buf, audioPath: audioToUse });
   }
 
   stopSignal(id, now) {
@@ -253,15 +308,16 @@ export default class SimpleTuner {
     // Immediately remove from map to prevent duplicate creation
     this.signalNodes.delete(id);
 
-    // Fade out and stop
-    node.gain.gain.setTargetAtTime(MIN_GAIN, now, 0.2);
-    setTimeout(() => {
-      try {
-        node.source.stop();
-        node.source.disconnect();
-        node.gain.disconnect();
-      } catch (e) { /* ignore */ }
-    }, 1000);
+    // Stop immediately without fade for cleaner transitions
+    try {
+      node.gain.gain.cancelScheduledValues(now);
+      node.gain.gain.setValueAtTime(MIN_GAIN, now);
+      node.source.stop(now);
+      node.source.disconnect();
+      node.gain.disconnect();
+    } catch (e) { 
+      console.warn('[Tuner] Error stopping signal', id, e);
+    }
   }
 
   stopAll() {

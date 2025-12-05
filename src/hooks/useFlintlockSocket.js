@@ -142,8 +142,8 @@ export function useFlintlockSocket(sessionId, teamId, teamName) {
   }, [emit]);
 
   // Jamming control (EW)
-  const emitJammingUpdate = useCallback((isJamming, targetFreq, power) => {
-    return emit('jamming:update', { isJamming, targetFreq, power });
+  const emitJammingUpdate = useCallback((signals) => {
+    return emit('jamming:update', { signals });
   }, [emit]);
 
   // Mission countdown tick (Admin)
