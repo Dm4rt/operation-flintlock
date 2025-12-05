@@ -99,10 +99,9 @@ export default function IntelDashboard({ operationId }) {
                 id: docSnap.id,
                 type: 'encrypted',
                 title: '🔐 Encrypted Message Intercepted',
-                description: 'ROT-13 + Symbol Shift encryption detected',
+                description: 'Intercepted encrypted communications - origin unknown',
                 encryptedText: 'FynGrDhengl$25@',
                 hint: 'The quarry turns letters halfway around the alphabet. Numbers move forward three steps. Tools shift right on the workbench.',
-                cipher: 'ROT-13 + Symbol Shift',
                 solution: 'SlateQuarry#92!',
                 timestamp: new Date(inject.activatedAt || Date.now())
               });
@@ -111,10 +110,9 @@ export default function IntelDashboard({ operationId }) {
                 id: docSnap.id,
                 type: 'encrypted',
                 title: '🔐 Encrypted Message Intercepted',
-                description: 'Vigenère cipher with key "FOSSIL" detected',
+                description: 'Intercepted encrypted communications - origin unknown',
                 encryptedText: 'Yzwacqmt@85$',
                 hint: 'Ancient fossils hide the pattern. Stones swap places, numbers mirror themselves.',
-                cipher: 'Vigenère (Key: FOSSIL)',
                 solution: 'Trilobite$58@',
                 timestamp: new Date(inject.activatedAt || Date.now())
               });
@@ -123,10 +121,9 @@ export default function IntelDashboard({ operationId }) {
                 id: docSnap.id,
                 type: 'encrypted',
                 title: '🔐 Encrypted Message Intercepted',
-                description: 'Custom XOR cipher (Key: 0x3A) detected',
+                description: 'Intercepted encrypted communications - origin unknown',
                 encryptedText: '0A 5F 58 58 56 56 1C 4C 48 48 59 5E 65 6D 6D 15',
                 hint: 'The forge masks each symbol using the same glowing rune. The result is unreadable without the correct spark.',
-                cipher: 'XOR Cipher (Key: 0x3A)',
                 solution: 'PebbleForge%77?',
                 timestamp: new Date(inject.activatedAt || Date.now())
               });
@@ -385,8 +382,6 @@ export default function IntelDashboard({ operationId }) {
                                     <div className="bg-slate-900/80 border border-red-500/30 rounded p-3 mb-3">
                                       <div className="flex items-center gap-2 mb-2">
                                         <span className="text-red-400 font-mono text-xs">ENCRYPTED</span>
-                                        <span className="text-slate-500 text-xs">•</span>
-                                        <span className="text-slate-400 text-xs">{item.cipher}</span>
                                       </div>
                                       <code className="text-amber-300 font-mono text-sm break-all">
                                         {item.encryptedText}
