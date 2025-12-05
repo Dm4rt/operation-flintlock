@@ -408,21 +408,6 @@ export default function SdrAdminPanel({ operationId }) {
                   {isPaused ? '▶ Start Listening' : '⏸ Pause Listening'}
                 </button>
               )}
-              <div className="mt-4">
-                <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                  <span>Volume</span>
-                  <span className="font-mono text-slate-200">{Math.round(volume * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={volume}
-                  onChange={(e) => setVolume(Number(e.target.value))}
-                  className="w-full accent-slate-200"
-                />
-              </div>
             </div>
           </aside>
 

@@ -112,14 +112,6 @@ export default class SimpleTuner {
     if (this.masterGain) {
       this.masterGain.gain.setTargetAtTime(0, now, 0.05);
     }
-    if (this.staticGain) {
-      this.pausedStaticLevel = this.staticGain.gain.value;
-      this.staticGain.gain.setTargetAtTime(0, now, 0.05);
-    }
-    // Stop all signal nodes when muted
-    this.signalNodes.forEach((node, id) => {
-      this.stopSignal(id, now);
-    });
   }
 
   unmute() {
@@ -128,11 +120,6 @@ export default class SimpleTuner {
     if (this.masterGain) {
       this.masterGain.gain.setTargetAtTime(this.volume, now, 0.05);
     }
-    if (this.staticGain) {
-      this.staticGain.gain.setTargetAtTime(this.pausedStaticLevel ?? 0.3, now, 0.1);
-    }
-    // Refresh gains based on latest tuning so signal/static mix comes back cleanly
-    this.updateTuning({});
   }
 
   /**
