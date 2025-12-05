@@ -251,8 +251,8 @@ export default function SdrAdminPanel({ operationId }) {
         
         setInjectStatus((prev) => {
           const updated = [...prev];
-          snapshot.forEach((doc) => {
-            const data = doc.data();
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
             console.log('[SDR/EW] 📡 INJECT UPDATE:', data);
             const index = updated.findIndex(i => i.id === data.type);
             if (index >= 0) {
@@ -261,6 +261,59 @@ export default function SdrAdminPanel({ operationId }) {
                 status: data.status || 'idle',
                 lastTriggered: data.updatedAt ? new Date(data.updatedAt) : null
               };
+            }
+
+            // Handle satellite-dropout inject: add bad signal to spectrum
+            if (data.type === 'satellite-dropout' && data.status === 'active' && data.payload?.badFrequency) {
+              const badFreqHz = data.payload.badFrequency;
+              
+              console.log('[SDR/EW] Adding bad signal at', badFreqHz / 1_000_000, 'MHz');
+              setJammerSignals(prev => {
+                // Check if bad signal already exists
+                const existingBadSignal = prev.find(s => s.id === 'bad-signal-dropout');
+                if (existingBadSignal) {
+                  return prev;
+                }
+                
+                return [
+                  ...prev,
+                  {
+                    id: 'bad-signal-dropout',
+                    frequencyHz: badFreqHz,
+                    widthHz: 250_000,
+                    minDb: -100,
+                    maxDb: -30,
+                    peakStrength: 0.9,
+                    active: true,
+                    isBadSignal: true,
+                    name: 'Unknown Interference',
+                    audioPath: '/audio/jamming.mp3'
+                  }
+                ];
+              });
+            }
+
+            // Remove bad signal when inject is resolved or reset to idle
+            if (data.type === 'satellite-dropout' && (data.status === 'resolved' || data.status === 'idle')) {
+              console.log('[SDR/EW] Removing bad signal (inject resolved/reset)');
+              
+              setJammerSignals(prev => {
+                const hasBadSignal = prev.some(s => s.id === 'bad-signal-dropout');
+                if (!hasBadSignal) {
+                  console.log('[SDR/EW] Bad signal already removed');
+                  return prev;
+                }
+                
+                // Force stop and remove bad signal from tuner
+                if (tunerRef.current) {
+                  tunerRef.current.stopAll();
+                  console.log('[SDR/EW] Stopped all tuner signals to force refresh');
+                }
+                
+                const filtered = prev.filter(s => s.id !== 'bad-signal-dropout');
+                console.log('[SDR/EW] Signals after removal:', filtered.length, 'from', prev.length);
+                return filtered;
+              });
             }
           });
           return updated;
@@ -277,6 +330,59 @@ export default function SdrAdminPanel({ operationId }) {
       if (unsubscribe) unsubscribe();
     };
   }, [operationId]);
+
+  // Check for jammer resolution of satellite-dropout inject
+  useEffect(() => {
+    if (!operationId) return;
+
+    const checkJammerResolution = async () => {
+      const { collection, getDocs, query, where, doc, updateDoc } = await import('firebase/firestore');
+      const { db } = await import('../../services/firebase');
+
+      const injectsRef = collection(db, 'sessions', operationId, 'injects');
+      const q = query(injectsRef, where('team', '==', 'ew'), where('type', '==', 'satellite-dropout'), where('status', '==', 'active'));
+      
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) return;
+
+      snapshot.forEach(async (docSnap) => {
+        const data = docSnap.data();
+        const badFreqHz = data.payload?.badFrequency;
+        
+        if (!badFreqHz) return;
+
+        // Check if any jammer is within range
+        const resolvedByJammer = jammerSignals.find(s => 
+          s.isJammer && 
+          s.active && 
+          Math.abs(s.frequencyHz - badFreqHz) <= 50_000
+        );
+
+        if (resolvedByJammer) {
+          console.log('[SDR/EW] ✅ Jammer detected at bad frequency! Resolving inject...');
+          const resolvedData = {
+            status: 'resolved',
+            resolvedAt: new Date().toISOString()
+          };
+          
+          // Update both EW and SDA inject documents
+          const ewInjectRef = doc(db, 'sessions', operationId, 'injects', 'ew-satellite-dropout');
+          const sdaInjectRef = doc(db, 'sessions', operationId, 'injects', 'sda-satellite-dropout');
+          
+          await Promise.all([
+            updateDoc(ewInjectRef, resolvedData).catch(err => console.error('[SDR/EW] Failed to resolve EW inject:', err)),
+            updateDoc(sdaInjectRef, resolvedData).catch(err => console.error('[SDR/EW] Failed to resolve SDA inject:', err))
+          ]);
+        }
+      });
+    };
+
+    // Check every 2 seconds
+    const interval = setInterval(checkJammerResolution, 2000);
+
+    return () => clearInterval(interval);
+  }, [operationId, jammerSignals]);
 
   const visualsActive = !isPaused;
 
@@ -543,6 +649,31 @@ export default function SdrAdminPanel({ operationId }) {
                   <p className="text-2xl font-bold text-red-400">{activeJammerCount} / 4</p>
                 </div>
               </div>
+
+              {/* Bad Signals (Interference) */}
+              {jammerSignals.some(s => s.isBadSignal && s.active) && (
+                <div className="mb-4 space-y-2">
+                  <p className="text-xs text-amber-400 font-semibold uppercase mb-2">⚠️ Unknown Interference Detected</p>
+                  {jammerSignals.filter(s => s.isBadSignal && s.active).map((signal) => (
+                    <div
+                      key={signal.id}
+                      className="bg-amber-950/30 border border-amber-500/50 rounded-lg p-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-amber-400 text-xl">⚡</span>
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            {signal.name || 'Unknown Interference'}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {formatFreq(signal.frequencyHz)} | BW: {formatFreq(signal.widthHz)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Active Jammers List */}
               {activeJammerCount > 0 && (

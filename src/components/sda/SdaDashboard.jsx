@@ -11,7 +11,7 @@ import gpsImage from './assets/GPS_III.jpg';
 import sbirsImage from './assets/SBIRS.jpg';
 import isrImage from './assets/ISR.jpg';
 import { db } from '../../services/firebase';
-import { collection, doc, setDoc, updateDoc, getDocs } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import useCountdown from '../../hooks/useCountdown';
 import useSession from '../../hooks/useSession';
 import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
@@ -25,6 +25,7 @@ export default function SdaDashboard({ sessionCode }) {
   const [showOrbits, setShowOrbits] = useState(false);
   const [expandedSatellite, setExpandedSatellite] = useState(null);
   const [plannedManeuver, setPlannedManeuver] = useState(null);
+  const [activeDropoutSatellite, setActiveDropoutSatellite] = useState(null);
   const [injects, setInjects] = useState([
     {
       id: 1,
@@ -172,6 +173,27 @@ export default function SdaDashboard({ sessionCode }) {
 
     return unsubscribe;
   }, [socket, selectedSatellite]);
+
+  // Subscribe to inject status changes from Firestore
+  useEffect(() => {
+    if (!sessionCode || !db) return;
+
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'sessions', sessionCode, 'injects'), where('team', '==', 'sda')),
+      (snapshot) => {
+        snapshot.forEach((docSnap) => {
+          const inject = docSnap.data();
+          if (inject.type === 'satellite-dropout' && inject.status === 'active' && inject.payload?.targetSatellite) {
+            setActiveDropoutSatellite(inject.payload.targetSatellite);
+          } else if (inject.type === 'satellite-dropout' && (inject.status === 'resolved' || inject.status === 'idle')) {
+            setActiveDropoutSatellite(null);
+          }
+        });
+      }
+    );
+
+    return unsubscribe;
+  }, [sessionCode]);
 
   // Update satellite positions every second and broadcast via Socket.IO
   useEffect(() => {
@@ -454,7 +476,7 @@ export default function SdaDashboard({ sessionCode }) {
 
           {/* Satellite List */}
           <div className="flex-1 overflow-y-auto space-y-3">
-            {satellites.map(sat => {
+            {satellites.filter(sat => sat.id !== activeDropoutSatellite).map(sat => {
               // Get image based on satellite
               const getImage = (id) => {
                 switch(id) {
@@ -569,7 +591,7 @@ export default function SdaDashboard({ sessionCode }) {
         {/* Center - 3D Orbit Viewer */}
         <div className="flex-1 bg-slate-950 relative z-0">
           <SdaOrbitViewer 
-            satellites={satellites} 
+            satellites={satellites.filter(sat => sat.id !== activeDropoutSatellite)} 
             selectedSatellite={selectedSatellite}
             onSelectSatellite={setSelectedSatellite}
             showOrbits={showOrbits}

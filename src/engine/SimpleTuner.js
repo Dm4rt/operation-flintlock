@@ -150,9 +150,9 @@ export default class SimpleTuner {
     // Use provided signals array (includes jammers) or fallback to transmissions
     const allSigs = allSignals || transmissions;
     
-    // Separate jammers from regular signals
+    // Separate jammers from regular signals (bad signals are treated as regular signals for audio playback)
     const activeJammers = allSigs.filter(s => s.isJammer && s.active);
-    const regularSignals = allSigs.filter(s => !s.isJammer);
+    const regularSignals = allSigs.filter(s => !s.isJammer || s.isBadSignal);
 
     console.log('[Tuner] Processing', regularSignals.length, 'signals,', activeJammers.length, 'active jammers');
     
