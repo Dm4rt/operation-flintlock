@@ -592,7 +592,7 @@ export default function SdaDashboard({ sessionCode }) {
 
           {/* Event Feed */}
           <div className="flex-1 min-h-[200px]">
-            <SdaInjectFeed injects={injects} />
+            <SdaInjectFeed injects={injects} socket={socket} sessionId={sessionCode} />
           </div>
         </div>
       </div>

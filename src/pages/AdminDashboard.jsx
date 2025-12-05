@@ -11,6 +11,8 @@ import { db } from "../services/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { initializeFlintFiles } from "../terminal/initFlintFiles";
 import FlintFileAdmin from "../components/cmd/FlintFileAdmin";
+import AdminInjectPanel from "../components/admin/AdminInjectPanel";
+import InjectLogViewer from "../components/admin/InjectLogViewer";
 
 const ROUND_OPTIONS = [0, 5, 10, 15, 20, 30, 45, 60];
 
@@ -676,17 +678,23 @@ export default function AdminDashboard() {
             />
           )}
 
-          <TeamStatus sessionId={scenarioId} />
+          <TeamStatus sessionId={scenarioId} socket={socket} />
         </div>
 
         {/* Center column: Inject Feed + System Log underneath */}
         <div className="lg:col-span-9 space-y-4">
-          <InjectFeed scenarioId={scenarioId} className="min-h-[420px]" />
+          <InjectFeed scenarioId={scenarioId} socket={socket} teamId="admin" className="min-h-[420px]" />
 
           <SystemLog logs={logs} />
 
+          {/* Inject Control Dashboard */}
+          <AdminInjectPanel sessionId={scenarioId} socket={socket} />
+
+          {/* Inject Log Viewer */}
+          <InjectLogViewer socket={socket} sessionId={scenarioId} />
+
           {/* Flint File Control Panel */}
-          <FlintFileAdmin sessionId={scenarioId} />
+          <FlintFileAdmin sessionId={scenarioId} socket={socket} />
         </div>
       </div>
 

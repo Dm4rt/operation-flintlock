@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import SimpleTuner from '../../engine/SimpleTuner';
 import transmissions from '../../data/audioTransmissions.json';
 import useCountdown from '../../hooks/useCountdown';
@@ -7,6 +7,7 @@ import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
 import StarBackground from '../StarBackground';
 import SpectrumCanvas from './SpectrumCanvas';
 import WaterfallCanvas from './WaterfallCanvas';
+import { INJECT_CATALOG } from '../../data/injectCatalog';
 
 const formatFreq = (hz) => {
   if (hz >= 1_000_000) return `${(hz / 1_000_000).toFixed(3)} MHz`;
@@ -22,6 +23,14 @@ export default function SdrAdminPanel({ operationId }) {
   const { timeLeft } = useCountdown(socket);
 
   const tunerRef = useRef(null);
+  const ewInjectCatalog = useMemo(() => INJECT_CATALOG.ew || [], []);
+  const [injectStatus, setInjectStatus] = useState(() =>
+    ewInjectCatalog.map((item) => ({
+      ...item,
+      status: 'idle',
+      lastTriggered: null
+    }))
+  );
 
   const [audioReady, setAudioReady] = useState(false);
   const [volume, setVolume] = useState(0.75);
@@ -90,7 +99,7 @@ export default function SdrAdminPanel({ operationId }) {
   }, [operationStarted, volume]);
 
   // Get count of active jammers
-  const activeJammerCount = React.useMemo(() => 
+  const activeJammerCount = useMemo(() => 
     jammerSignals.filter(s => s.isJammer && s.active).length,
     [jammerSignals]
   );
@@ -212,17 +221,62 @@ export default function SdrAdminPanel({ operationId }) {
 
   // Listen for jamming updates from other clients
   useEffect(() => {
-    if (!socket.isConnected) return;
+    if (!socket?.isConnected) return;
 
-    const unsubscribe = socket.on('jamming:update', ({ signals }) => {
+    const unsubscribeJamming = socket.on('jamming:update', ({ signals }) => {
       console.log('[SDR] Received jamming update');
       if (signals) {
         setJammerSignals(signals);
       }
     });
 
-    return unsubscribe;
-  }, [socket]);
+    return () => {
+      unsubscribeJamming();
+    };
+  }, [socket, socket?.isConnected]);
+
+  // Subscribe to Firestore inject state (like Flint files)
+  useEffect(() => {
+    if (!operationId) return;
+
+    const setupSubscription = async () => {
+      const { collection, onSnapshot, query, where } = await import('firebase/firestore');
+      const { db } = await import('../../services/firebase');
+      
+      const injectsRef = collection(db, 'sessions', operationId, 'injects');
+      const q = query(injectsRef, where('team', '==', 'ew'));
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        console.log('[SDR/EW] Firestore snapshot:', snapshot.size, 'injects');
+        
+        setInjectStatus((prev) => {
+          const updated = [...prev];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            console.log('[SDR/EW] 📡 INJECT UPDATE:', data);
+            const index = updated.findIndex(i => i.id === data.type);
+            if (index >= 0) {
+              updated[index] = {
+                ...updated[index],
+                status: data.status || 'idle',
+                lastTriggered: data.updatedAt ? new Date(data.updatedAt) : null
+              };
+            }
+          });
+          return updated;
+        });
+      });
+
+      return unsubscribe;
+    };
+
+    let unsubscribe;
+    setupSubscription().then(unsub => { unsubscribe = unsub; });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [operationId]);
 
   const visualsActive = !isPaused;
 
@@ -438,6 +492,43 @@ export default function SdrAdminPanel({ operationId }) {
                 height={380}
                 isActive={visualsActive}
               />
+            </div>
+
+            <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Admin Inject Board</h3>
+                  <p className="text-xs text-slate-400">Preloaded locally, toggled via Socket.IO</p>
+                </div>
+                <span className="text-xs text-slate-500 uppercase">{injectStatus.length} injects</span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {injectStatus.map((inject) => (
+                  <div key={inject.id} className="border border-slate-800 rounded-lg p-3 bg-slate-900/30">
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl" role="img" aria-label="inject-icon">{inject.icon}</span>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-white">{inject.title}</p>
+                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
+                            inject.status === 'active'
+                              ? 'border-amber-500/40 text-amber-300 bg-amber-500/10'
+                              : 'border-slate-500/40 text-slate-300 bg-slate-500/10'
+                          }`}>
+                            {inject.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400">{inject.description}</p>
+                        {inject.lastTriggered && (
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            Last update: {inject.lastTriggered.toLocaleTimeString('en-US', { hour12: false })}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Jamming Control Panel */}

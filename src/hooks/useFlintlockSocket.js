@@ -151,7 +151,12 @@ export function useFlintlockSocket(sessionId, teamId, teamName) {
     return emit('mission:tick', payload);
   }, [emit]);
 
-  // Push inject (Admin)
+  // Send inject (Admin - new system)
+  const sendInject = useCallback((team, type, title, description, payload = {}, status = 'active') => {
+    return emit('inject:send', { team, type, title, description, payload, status });
+  }, [emit]);
+
+  // Push inject (Admin - legacy)
   const pushInject = useCallback((inject) => {
     return emit('inject:push', { inject });
   }, [emit]);
@@ -188,6 +193,7 @@ export function useFlintlockSocket(sessionId, teamId, teamName) {
     emitSdrUpdate,
     emitJammingUpdate,
     emitMissionTick,
+    sendInject,
     pushInject,
     updateFlintVisibility,
     emitTeamAction,

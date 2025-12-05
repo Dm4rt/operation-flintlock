@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
 import { revealFlintFile, hideFlintFile } from '../../terminal/initFlintFiles';
 
-export default function FlintFileAdmin({ sessionId }) {
-  const socket = useFlintlockSocket(sessionId, 'admin', 'Admin');
+export default function FlintFileAdmin({ sessionId, socket }) {
   const [visibilityMap, setVisibilityMap] = useState({});
   const [flintFiles, setFlintFiles] = useState([]);
   const toggleInProgressRef = useRef({});
@@ -33,7 +31,7 @@ export default function FlintFileAdmin({ sessionId }) {
 
   // Listen for visibility updates via Socket.IO
   useEffect(() => {
-    if (!socket.isConnected) return;
+    if (!socket?.isConnected) return;
 
     const unsubscribe = socket.on('flint:visibility', ({ filename, visible }) => {
       // Prevent processing updates we just sent
@@ -51,7 +49,7 @@ export default function FlintFileAdmin({ sessionId }) {
     });
 
     return unsubscribe;
-  }, [socket]);
+  }, [socket, socket?.isConnected]);
 
   const handleToggle = async (filename) => {
     // Prevent rapid-fire toggles
@@ -76,7 +74,7 @@ export default function FlintFileAdmin({ sessionId }) {
       lastSocketUpdateRef.current[filename] = newVisibility;
       
       // Broadcast via Socket.IO for real-time updates
-      socket.updateFlintVisibility(filename, newVisibility);
+      socket?.updateFlintVisibility?.(filename, newVisibility);
       
       // Update local state immediately for UI responsiveness
       setVisibilityMap(prev => ({

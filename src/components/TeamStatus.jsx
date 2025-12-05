@@ -2,11 +2,9 @@ import React, { useState, useEffect } from "react";
 import { TEAMS } from "../utils/constants";
 import { Users } from "lucide-react";
 import useSession from "../hooks/useSession";
-import { useFlintlockSocket } from "../hooks/useFlintlockSocket";
 
-export default function TeamStatus({ sessionId }) {
+export default function TeamStatus({ sessionId, socket }) {
     const { participants } = useSession(sessionId);
-    const socket = useFlintlockSocket(sessionId, null, null);
     const [onlineTeams, setOnlineTeams] = useState(new Set());
 
     // Initialize from Firebase participants
@@ -17,7 +15,7 @@ export default function TeamStatus({ sessionId }) {
 
     // Listen for real-time Socket.IO connect/disconnect events
     useEffect(() => {
-        if (!socket.isConnected) return;
+        if (!socket?.isConnected) return;
 
         const unsubscribeJoined = socket.on('team:joined', ({ teamId }) => {
             console.log(`[TeamStatus] Team joined: ${teamId}`);
@@ -37,7 +35,7 @@ export default function TeamStatus({ sessionId }) {
             unsubscribeJoined();
             unsubscribeLeft();
         };
-    }, [socket]);
+    }, [socket, socket?.isConnected]);
 
     return (
         <div className="bg-slate-950 rounded-xl border border-slate-800 p-6">

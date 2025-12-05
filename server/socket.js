@@ -182,6 +182,51 @@ export function initializeSockets(httpServer) {
     // ========================================
     // ADMIN INJECTS (Admin → All)
     // ========================================
+    
+    // New inject control system
+    socket.on('inject:send', (data) => {
+      const { sessionId, team, type, title, description, payload, status = 'active' } = data;
+      
+      if (!sessionId) {
+        console.error('[Socket] ❌ Inject send failed: No sessionId provided');
+        return;
+      }
+      
+      console.log(`[Socket] 📡 Inject sent to ${team}: ${type} - ${title}`);
+      console.log(`[Socket]    Session: ${sessionId}`);
+
+      const injectData = {
+        team,
+        type,
+        title,
+        description,
+        payload: payload || {},
+        status,
+        timestamp: Date.now(),
+        sentBy: socket.id
+      };
+
+      // Debug: Check what rooms exist
+      const teamRoom = `session:${sessionId}:team:${team}`;
+      const adminRoom = `session:${sessionId}:team:admin`;
+      const sessionRoom = `session:${sessionId}`;
+      
+      console.log(`[Socket]    Target rooms:`, { teamRoom, adminRoom, sessionRoom });
+
+      // Broadcast to specific team (they will handle the inject logic on frontend)
+      io.to(teamRoom).emit('inject:received', injectData);
+      console.log(`[Socket]   ✓ Emitted inject:received to ${teamRoom}`);
+      
+      // Also broadcast to admin for logging
+      io.to(adminRoom).emit('inject:log', injectData);
+      console.log(`[Socket]   ✓ Emitted inject:log to ${adminRoom}`);
+      
+      // Broadcast to inject feed (all teams can see inject was sent)
+      io.to(sessionRoom).emit('inject:new', injectData);
+      console.log(`[Socket]   ✓ Emitted inject:new to ${sessionRoom}`);
+    });
+
+    // Legacy inject system (keep for compatibility)
     socket.on('inject:push', (data) => {
       const { sessionId, inject } = data;
       
