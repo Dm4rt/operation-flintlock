@@ -4,6 +4,8 @@ import { VirtualFS } from '../../terminal/fs';
 import { CommandParser } from '../../terminal/parser';
 import { loadFilesystem } from '../../terminal/fsLoader';
 import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
+import { db } from '../../services/firebase';
+import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 
 export default function CyberTerminal({ operationId, sessionId }) {
   const socket = useFlintlockSocket(sessionId, 'cyber', 'Cyber');
@@ -14,13 +16,18 @@ export default function CyberTerminal({ operationId, sessionId }) {
   const [fs, setFs] = useState(null);
   const [parser, setParser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeViruses, setActiveViruses] = useState([]);
   
   const terminalRef = useRef(null);
   const inputRef = useRef(null);
   const fsRootRef = useRef(null);
+  const isInitialized = useRef(false);
 
-  // Load filesystem from real files
+  // Load filesystem from real files (ONLY ONCE)
   useEffect(() => {
+    if (isInitialized.current) return; // Prevent re-initialization
+    isInitialized.current = true;
+
     const initFilesystem = async () => {
       try {
         // Load real filesystem
@@ -30,8 +37,8 @@ export default function CyberTerminal({ operationId, sessionId }) {
         console.log('Loaded filesystem root:', fsRoot);
         console.log('Root children:', Object.keys(fsRoot.children));
         
-        // Create VirtualFS with real filesystem data (no visibility map yet)
-        const filesystem = new VirtualFS(fsRoot, true, {}); // Empty map initially
+        // Create VirtualFS without socket initially (will be set later)
+        const filesystem = new VirtualFS(fsRoot, true, {}, null);
         const cmdParser = new CommandParser(filesystem);
         
         setFs(filesystem);
@@ -58,7 +65,15 @@ export default function CyberTerminal({ operationId, sessionId }) {
     };
 
     initFilesystem();
-  }, [operationId]);
+  }, []);
+
+  // Update filesystem socket reference when socket connects
+  useEffect(() => {
+    if (fs && socket.isConnected) {
+      fs.socket = socket;
+      console.log('[Cyber] Socket attached to filesystem');
+    }
+  }, [fs, socket.isConnected]);
 
   // Subscribe to Socket.IO visibility changes for .flint files
   useEffect(() => {
@@ -88,6 +103,100 @@ export default function CyberTerminal({ operationId, sessionId }) {
 
     return unsubscribe;
   }, [fs, socket]);
+
+  // Subscribe to virus injects via Firestore
+  const processedVirusesRef = useRef(new Set());
+  
+  useEffect(() => {
+    if (!fs || !sessionId || !db) return;
+
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'sessions', sessionId, 'injects'), where('team', '==', 'cyber')),
+      (snapshot) => {
+        const activeVirusList = [];
+        
+        snapshot.forEach((docSnap) => {
+          const inject = docSnap.data();
+          
+          if (inject.type === 'virus-detected' && inject.status === 'active' && inject.payload) {
+            const payload = { ...inject.payload, injectDocId: docSnap.id };
+
+            // Check if this virus was already processed (avoid re-adding files/messages)
+            if (!processedVirusesRef.current.has(payload.id)) {
+              console.log('[Cyber] Virus inject activated:', inject);
+              processedVirusesRef.current.add(payload.id);
+              
+              // Add virus file to filesystem
+              const result = fs.addFile(payload.virusPath, `[INFECTED - ${payload.virusType.toUpperCase()}]`);
+              if (result.success) {
+                console.log('[Cyber] Virus file added:', payload.virusPath);
+              }
+
+              // Add gibberish files for trojan
+              if (payload.virusType === 'trojan' && payload.gibberishFiles) {
+                payload.gibberishFiles.forEach(gibPath => {
+                  const gibberish = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+                  fs.addFile(gibPath, gibberish);
+                });
+              }
+
+              // Show warning message
+              const warningMessages = {
+                visual: '⚠️ CRITICAL: System integrity compromised! Unknown process detected.',
+                keylogger: '⚠️ WARNING: Input anomaly detected. Keyboard buffer may be corrupted.',
+                trojan: '⚠️ ALERT: Unauthorized file creation detected.'
+              };
+
+              setLines(prev => [
+                ...prev,
+                { type: 'system', text: '' },
+                { type: 'error', text: warningMessages[payload.virusType] },
+                { type: 'error', text: 'Run diagnostics immediately.' },
+                { type: 'system', text: '' }
+              ]);
+            }
+
+            activeVirusList.push(payload);
+          }
+        });
+        
+        setActiveViruses(activeVirusList);
+      }
+    );
+
+    return unsubscribe;
+  }, [fs, sessionId, db]);
+
+  // Listen for file deletions to resolve virus injects
+  useEffect(() => {
+    if (!socket.isConnected || !sessionId || !db) return;
+
+    const handleFileDeletion = async ({ filename, path }) => {
+      console.log('[Cyber] File deleted:', path);
+      
+      // Check if deleted file matches any active virus
+      const matchingVirus = activeViruses.find(v => v.virusPath === path);
+      if (matchingVirus && matchingVirus.injectDocId) {
+        console.log('[Cyber] ✅ Virus eliminated! Resolving inject...');
+        
+        const injectRef = doc(db, 'sessions', sessionId, 'injects', matchingVirus.injectDocId);
+        await updateDoc(injectRef, {
+          status: 'resolved',
+          resolvedAt: new Date().toISOString()
+        }).catch(err => console.error('[Cyber] Failed to resolve virus:', err));
+        
+        setLines(prev => [
+          ...prev,
+          { type: 'system', text: '' },
+          { type: 'success', text: '✓ Threat neutralized. System integrity restored.' },
+          { type: 'system', text: '' }
+        ]);
+      }
+    };
+
+    const unsubscribe = socket.on('cyber:file-deleted', handleFileDeletion);
+    return unsubscribe;
+  }, [socket, activeViruses, sessionId, db]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -173,6 +282,14 @@ export default function CyberTerminal({ operationId, sessionId }) {
         setCurrentInput(commandHistory[newIndex]);
       } else {
         setCurrentInput('');
+      }
+    } else {
+      // Apply ASCII shift for keylogger virus
+      const keyloggerVirus = activeViruses.find(v => v.virusType === 'keylogger');
+      if (keyloggerVirus && e.key.length === 1) {
+        e.preventDefault();
+        const shifted = String.fromCharCode(e.key.charCodeAt(0) + keyloggerVirus.asciiShift);
+        setCurrentInput(prev => prev + shifted);
       }
     }
   };
@@ -282,10 +399,16 @@ export default function CyberTerminal({ operationId, sessionId }) {
 
         {/* Terminal */}
         <div className="flex-1 p-6 overflow-hidden">
-          <div className="h-full bg-black/90 rounded-xl border border-slate-800 shadow-2xl overflow-hidden">
+          <div className={`h-full bg-black/90 rounded-xl border shadow-2xl overflow-hidden ${
+            activeViruses.some(v => v.virusType === 'visual') 
+              ? 'border-red-500 shadow-red-500/50 animate-pulse' 
+              : 'border-slate-800'
+          }`}>
             <div
               ref={terminalRef}
-              className="h-full overflow-y-auto p-6 font-mono text-sm"
+              className={`h-full overflow-y-auto p-6 font-mono text-sm ${
+                activeViruses.some(v => v.virusType === 'visual') ? 'text-red-400' : ''
+              }`}
               onClick={() => inputRef.current?.focus()}
             >
               {!fs && (

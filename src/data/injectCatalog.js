@@ -11,6 +11,12 @@ export const INJECT_CATALOG = {
       title: 'Unknown Satellite Over Kish Island',
       description: 'New satellite appears over 26.5325° N, 53.9868° E. SDA must classify and report.',
       icon: '❓'
+    },
+    {
+      id: 'coorbital-threat',
+      title: 'Co-orbital ASAT Threat',
+      description: 'Aggressive satellite detected in same orbit as friendly asset. SDA must identify and report.',
+      icon: '⚠️'
     }
   ],
   cyber: [
@@ -39,6 +45,24 @@ export const INJECT_CATALOG = {
       title: 'Cryptic Tweet Code',
       description: 'Tweet contains hidden cipher revealing launch window.',
       icon: '🐦'
+    },
+    {
+      id: 'encrypted-msg-1',
+      title: 'Encrypted Message: ROT-13',
+      description: 'Intercepted encrypted message using ROT-13 + Symbol Shift.',
+      icon: '🔐'
+    },
+    {
+      id: 'encrypted-msg-2',
+      title: 'Encrypted Message: Vigenère',
+      description: 'Intercepted message encrypted with Vigenère cipher (Key: FOSSIL).',
+      icon: '🔐'
+    },
+    {
+      id: 'encrypted-msg-3',
+      title: 'Encrypted Message: XOR',
+      description: 'Intercepted message encrypted with XOR cipher (Key: 0x3A).',
+      icon: '🔐'
     }
   ],
   ew: [

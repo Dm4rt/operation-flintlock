@@ -3,9 +3,14 @@ import StarBackground from '../StarBackground';
 import SatImageryPanel from './SatImageryPanel';
 import OSINTChallenge from './OSINTChallenge';
 import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
-import { Terminal } from 'lucide-react';
+import { Terminal, Inbox } from 'lucide-react';
+import { db } from '../../services/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import asatImage from './images/flint-asat.png';
+import crypticImage from './images/flint-cryptic.png';
 
 const ANALYSIS_TOOLS = [
+  { id: 'intel-inbox', name: 'Intel Inbox', icon: '📥', description: 'Incoming intelligence reports and imagery' },
   { id: 'sat-imagery', name: 'Satellite Imagery', icon: '🛰️', description: 'Live satellite view from SDA ISR asset' },
   { id: 'osint-challenge', name: 'OSINT Challenge', icon: '🔎', description: 'Oracle Island investigation challenge' }
 ];
@@ -18,6 +23,26 @@ export default function IntelDashboard({ operationId }) {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [imageryTimeoutId, setImageryTimeoutId] = useState(null);
   const [imageryError, setImageryError] = useState(null);
+  const [intelItems, setIntelItems] = useState([
+    {
+      id: 'welcome-1',
+      type: 'message',
+      title: '📧 Secure Communication Link',
+      description: 'Access secure email portal for mission communications',
+      link: 'https://dm4rt.github.io/flintmail/',
+      linkText: 'Open Flintmail',
+      timestamp: new Date()
+    },
+    {
+      id: 'welcome-2',
+      type: 'message',
+      title: '🔒 Nuclear Command System',
+      description: 'Classified nuclear command and control interface',
+      link: 'https://dm4rt.github.io/flintNuke/',
+      linkText: 'Access Nuclear System',
+      timestamp: new Date()
+    }
+  ]);
   const [injects, setInjects] = useState([
     {
       id: 1,
@@ -38,7 +63,85 @@ export default function IntelDashboard({ operationId }) {
     }
   };
 
-  // Listen for admin injects via Socket.IO
+  // Subscribe to intel injects via Firestore
+  useEffect(() => {
+    if (!operationId || !db) return;
+
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'sessions', operationId, 'injects'), where('team', '==', 'intel')),
+      (snapshot) => {
+        const items = [];
+        
+        snapshot.forEach((docSnap) => {
+          const inject = docSnap.data();
+          
+          if (inject.status === 'active') {
+            if (inject.type === 'asat-imagery') {
+              items.push({
+                id: docSnap.id,
+                type: 'image',
+                title: '🛰️ ASAT Prep Imagery',
+                description: 'New satellite images show crews prepping suspected ASAT payload',
+                image: asatImage,
+                timestamp: new Date(inject.activatedAt || Date.now())
+              });
+            } else if (inject.type === 'cryptic-tweet') {
+              items.push({
+                id: docSnap.id,
+                type: 'tweet',
+                title: '🐦 Cryptic Tweet Intercepted',
+                description: 'Social media monitoring detected suspicious encoded message',
+                image: crypticImage,
+                timestamp: new Date(inject.activatedAt || Date.now())
+              });
+            } else if (inject.type === 'encrypted-msg-1') {
+              items.push({
+                id: docSnap.id,
+                type: 'encrypted',
+                title: '🔐 Encrypted Message Intercepted',
+                description: 'ROT-13 + Symbol Shift encryption detected',
+                encryptedText: 'FynGrDhengl$25@',
+                hint: 'The quarry turns letters halfway around the alphabet. Numbers move forward three steps. Tools shift right on the workbench.',
+                cipher: 'ROT-13 + Symbol Shift',
+                solution: 'SlateQuarry#92!',
+                timestamp: new Date(inject.activatedAt || Date.now())
+              });
+            } else if (inject.type === 'encrypted-msg-2') {
+              items.push({
+                id: docSnap.id,
+                type: 'encrypted',
+                title: '🔐 Encrypted Message Intercepted',
+                description: 'Vigenère cipher with key "FOSSIL" detected',
+                encryptedText: 'Yzwacqmt@85$',
+                hint: 'Ancient fossils hide the pattern. Stones swap places, numbers mirror themselves.',
+                cipher: 'Vigenère (Key: FOSSIL)',
+                solution: 'Trilobite$58@',
+                timestamp: new Date(inject.activatedAt || Date.now())
+              });
+            } else if (inject.type === 'encrypted-msg-3') {
+              items.push({
+                id: docSnap.id,
+                type: 'encrypted',
+                title: '🔐 Encrypted Message Intercepted',
+                description: 'Custom XOR cipher (Key: 0x3A) detected',
+                encryptedText: '0A 5F 58 58 56 56 1C 4C 48 48 59 5E 65 6D 6D 15',
+                hint: 'The forge masks each symbol using the same glowing rune. The result is unreadable without the correct spark.',
+                cipher: 'XOR Cipher (Key: 0x3A)',
+                solution: 'PebbleForge%77?',
+                timestamp: new Date(inject.activatedAt || Date.now())
+              });
+            }
+          }
+        });
+        
+        setIntelItems(items.sort((a, b) => b.timestamp - a.timestamp));
+      }
+    );
+
+    return unsubscribe;
+  }, [operationId]);
+
+  // Listen for admin injects via Socket.IO (legacy)
   useEffect(() => {
     if (!socket.isConnected) return;
 
@@ -179,6 +282,139 @@ export default function IntelDashboard({ operationId }) {
               <div className="lg:col-span-2">
                 {selectedTool ? (
                   <div>
+                    {/* Intel Inbox */}
+                    {selectedTool.id === 'intel-inbox' && (
+                      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6">
+                        <div className="flex items-center gap-3 mb-6">
+                          <Inbox className="w-6 h-6 text-purple-400" />
+                          <h2 className="text-xl font-bold text-white">Intelligence Inbox</h2>
+                          <span className="ml-auto px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-sm font-semibold">
+                            {intelItems.length} items
+                          </span>
+                        </div>
+
+                        {intelItems.length === 0 ? (
+                          <div className="text-center py-12">
+                            <Inbox className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+                            <p className="text-slate-400">No intelligence items received yet</p>
+                            <p className="text-sm text-slate-500 mt-2">New imagery and reports will appear here</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {intelItems.map((item) => (
+                              <div
+                                key={item.id}
+                                className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 hover:border-purple-500/50 transition-colors"
+                              >
+                                {/* Message Type (Links) */}
+                                {item.type === 'message' && (
+                                  <div>
+                                    <div className="flex items-start justify-between mb-2">
+                                      <h3 className="text-lg font-semibold text-white">{item.title}</h3>
+                                      <span className="text-xs text-slate-500">
+                                        {item.timestamp.toLocaleTimeString()}
+                                      </span>
+                                    </div>
+                                    <p className="text-sm text-slate-300 mb-3">{item.description}</p>
+                                    <div className="flex gap-2">
+                                      <a
+                                        href={item.link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded transition-colors"
+                                      >
+                                        {item.linkText}
+                                      </a>
+                                      <span className="px-3 py-1.5 rounded text-sm bg-green-500/20 text-green-300">
+                                        System Link
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Image/Tweet Type */}
+                                {(item.type === 'image' || item.type === 'tweet') && (
+                                  <div className="flex gap-4">
+                                    <div className="flex-shrink-0">
+                                      <img
+                                        src={item.image}
+                                        alt={item.title}
+                                        className="w-32 h-32 object-cover rounded border border-slate-600"
+                                      />
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="flex items-start justify-between mb-2">
+                                        <h3 className="text-lg font-semibold text-white">{item.title}</h3>
+                                        <span className="text-xs text-slate-500">
+                                          {item.timestamp.toLocaleTimeString()}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm text-slate-300 mb-3">{item.description}</p>
+                                      <div className="flex gap-2">
+                                        <a
+                                          href={item.image}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded transition-colors"
+                                        >
+                                          View Full Image
+                                        </a>
+                                        <span className={`px-3 py-1.5 rounded text-sm ${
+                                          item.type === 'image' 
+                                            ? 'bg-blue-500/20 text-blue-300' 
+                                            : 'bg-cyan-500/20 text-cyan-300'
+                                        }`}>
+                                          {item.type === 'image' ? 'Imagery' : 'OSINT'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Encrypted Message Type */}
+                                {item.type === 'encrypted' && (
+                                  <div>
+                                    <div className="flex items-start justify-between mb-2">
+                                      <h3 className="text-lg font-semibold text-white">{item.title}</h3>
+                                      <span className="text-xs text-slate-500">
+                                        {item.timestamp.toLocaleTimeString()}
+                                      </span>
+                                    </div>
+                                    <p className="text-sm text-slate-300 mb-3">{item.description}</p>
+                                    
+                                    <div className="bg-slate-900/80 border border-red-500/30 rounded p-3 mb-3">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <span className="text-red-400 font-mono text-xs">ENCRYPTED</span>
+                                        <span className="text-slate-500 text-xs">•</span>
+                                        <span className="text-slate-400 text-xs">{item.cipher}</span>
+                                      </div>
+                                      <code className="text-amber-300 font-mono text-sm break-all">
+                                        {item.encryptedText}
+                                      </code>
+                                    </div>
+
+                                    <div className="bg-blue-900/20 border border-blue-500/30 rounded p-3 mb-3">
+                                      <div className="text-xs text-blue-300 font-semibold mb-1">HINT:</div>
+                                      <p className="text-xs text-blue-200/80 italic">{item.hint}</p>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                      <span className="px-3 py-1.5 rounded text-sm bg-red-500/20 text-red-300">
+                                        Encrypted
+                                      </span>
+                                      <span className="px-3 py-1.5 rounded text-sm bg-yellow-500/20 text-yellow-300">
+                                        Requires Decryption
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Satellite Imagery Tool */}
                     {selectedTool.id === 'sat-imagery' && (
                   <div>

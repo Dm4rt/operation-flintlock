@@ -228,6 +228,153 @@ export default function AdminInjectPanel({ sessionId, socket }) {
         console.log('    Deploy jammer at this frequency to resolve!');
         console.log('[AdminInjectPanel] Satellite dropout payload:', payload);
       }
+    } else if (nextStatus === 'active' && inject.id === 'unknown-satellite') {
+      // Generate random unknown satellite orbital parameters
+      const variants = [
+        { name: 'Kish Island', lat: 26.5325, lon: 53.9868, type: 'LEO', altitude: 450 },
+        { name: 'Continental US', lat: 39.8283, lon: -98.5795, type: 'GEO', altitude: 35786 },
+        { name: 'Polar', lat: 90, lon: 0, type: 'Polar', altitude: 800 }
+      ];
+      const variant = variants[Math.floor(Math.random() * variants.length)];
+      
+      payload = {
+        id: `unknown-${Date.now()}`,
+        name: `UNKNOWN-${Math.floor(Math.random() * 900) + 100}`,
+        targetLat: variant.lat,
+        targetLon: variant.lon,
+        orbitType: variant.type,
+        altitude: variant.altitude,
+        region: variant.name
+      };
+      
+      console.log('[AdminInjectPanel] ❓ UNKNOWN SATELLITE INJECT');
+      console.log('  ID:', payload.id);
+      console.log('  Name:', payload.name);
+      console.log('  Region:', variant.name);
+      console.log('  Orbit:', variant.type, '@', variant.altitude, 'km');
+    } else if (nextStatus === 'active' && inject.id === 'coorbital-threat') {
+      // Pick random friendly satellite to shadow
+      const satelliteIds = ['aehf-6', 'gps-iii-5', 'sbirs-geo-6', 'sentinel-7'];
+      const targetSat = satelliteIds[Math.floor(Math.random() * satelliteIds.length)];
+      
+      payload = {
+        id: `threat-${Date.now()}`,
+        name: `THREAT-${Math.floor(Math.random() * 900) + 100}`,
+        targetSatellite: targetSat,
+        offsetKm: Math.random() * 20 + 5 // 5-25 km offset
+      };
+      
+      console.log('[AdminInjectPanel] ⚠️ CO-ORBITAL THREAT INJECT');
+      console.log('  ID:', payload.id);
+      console.log('  Name:', payload.name);
+      console.log('  Shadowing:', targetSat);
+      console.log('  Offset:', payload.offsetKm.toFixed(1), 'km');
+    } else if (nextStatus === 'active' && inject.id === 'virus-detected') {
+      // Generate random virus variant
+      const variants = ['visual', 'keylogger', 'trojan'];
+      const virusType = variants[Math.floor(Math.random() * variants.length)];
+      
+      // Random directories for virus placement
+      const directories = [
+        '/home/cadet',
+        '/mission/briefings',
+        '/mission/inbox',
+        '/tools',
+        '/home',
+        '/mission'
+      ];
+      const virusDir = directories[Math.floor(Math.random() * directories.length)];
+      
+      // Disguised filenames
+      const disguisedNames = [
+        '.sys_config',
+        '.kernel_module',
+        'system.log',
+        '.cache_tmp',
+        'config.bak',
+        '.lib_loader',
+        'proc_data.tmp'
+      ];
+      const virusFilename = disguisedNames[Math.floor(Math.random() * disguisedNames.length)];
+      const virusPath = `${virusDir}/${virusFilename}`;
+      
+      // Generate gibberish files for trojan variant
+      const gibberishFiles = [];
+      if (virusType === 'trojan') {
+        const gibberishCount = Math.floor(Math.random() * 2) + 3; // 3-4 files
+        for (let i = 0; i < gibberishCount; i++) {
+          const gibDir = directories[Math.floor(Math.random() * directories.length)];
+          const gibName = `tmp_${Math.random().toString(36).substring(7)}.dat`;
+          gibberishFiles.push(`${gibDir}/${gibName}`);
+        }
+      }
+      
+      // ASCII shift amount for keylogger
+      const asciiShift = Math.floor(Math.random() * 3) + 1; // 1-3
+      
+      payload = {
+        id: `virus-${Date.now()}`,
+        virusType,
+        virusPath,
+        virusFilename,
+        asciiShift,
+        gibberishFiles
+      };
+      
+      console.log('[AdminInjectPanel] 🦠 VIRUS DETECTED INJECT');
+      console.log('  Type:', virusType);
+      console.log('  Virus File:', virusPath);
+      console.log('  ASCII Shift:', asciiShift);
+      console.log('  Gibberish Files:', gibberishFiles.length);
+    } else if (nextStatus === 'active' && inject.id === 'asat-imagery') {
+      payload = {
+        id: `asat-img-${Date.now()}`,
+        imageFile: 'flint-asat.png'
+      };
+      
+      console.log('[AdminInjectPanel] 📸 ASAT IMAGERY INJECT');
+      console.log('  Image:', payload.imageFile);
+    } else if (nextStatus === 'active' && inject.id === 'cryptic-tweet') {
+      payload = {
+        id: `tweet-${Date.now()}`,
+        imageFile: 'flint-cryptic.png'
+      };
+      
+      console.log('[AdminInjectPanel] 🐦 CRYPTIC TWEET INJECT');
+      console.log('  Image:', payload.imageFile);
+    } else if (nextStatus === 'active' && inject.id === 'encrypted-msg-1') {
+      payload = {
+        id: `encrypted-1-${Date.now()}`,
+        encryptedText: 'FynGrDhengl$25@',
+        cipher: 'ROT-13 + Symbol Shift',
+        solution: 'SlateQuarry#92!'
+      };
+      
+      console.log('[AdminInjectPanel] 🔐 ENCRYPTED MESSAGE 1 (ROT-13)');
+      console.log('  Encrypted:', payload.encryptedText);
+      console.log('  Solution:', payload.solution);
+    } else if (nextStatus === 'active' && inject.id === 'encrypted-msg-2') {
+      payload = {
+        id: `encrypted-2-${Date.now()}`,
+        encryptedText: 'Yzwacqmt@85$',
+        cipher: 'Vigenère (Key: FOSSIL)',
+        solution: 'Trilobite$58@'
+      };
+      
+      console.log('[AdminInjectPanel] 🔐 ENCRYPTED MESSAGE 2 (Vigenère)');
+      console.log('  Encrypted:', payload.encryptedText);
+      console.log('  Solution:', payload.solution);
+    } else if (nextStatus === 'active' && inject.id === 'encrypted-msg-3') {
+      payload = {
+        id: `encrypted-3-${Date.now()}`,
+        encryptedText: '0A 5F 58 58 56 56 1C 4C 48 48 59 5E 65 6D 6D 15',
+        cipher: 'XOR Cipher (Key: 0x3A)',
+        solution: 'PebbleForge%77?'
+      };
+      
+      console.log('[AdminInjectPanel] 🔐 ENCRYPTED MESSAGE 3 (XOR)');
+      console.log('  Encrypted:', payload.encryptedText);
+      console.log('  Solution:', payload.solution);
     }
 
     console.log('[AdminInjectPanel] Sending inject:', {

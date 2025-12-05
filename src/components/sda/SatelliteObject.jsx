@@ -22,6 +22,8 @@ export default function SatelliteObject({
   // Get color based on satellite type
   const getSatelliteColor = () => {
     if (isGhost) return '#38bdf8';
+    if (variant === 'unknown') return '#ff6b35'; // orange-red for unknown
+    if (variant === 'threat') return '#dc2626'; // bright red for threats
     if (isSelected) return '#fb923c'; // orange
     if (hovered) return '#ffffff'; // white
     
@@ -158,15 +160,24 @@ export default function SatelliteObject({
           }}
         >
           <div className={`px-3 py-2 rounded-lg border-2 backdrop-blur-md ${
-            isSelected 
-              ? 'bg-orange-500/90 border-orange-400' 
-              : isGhost
-                ? 'bg-cyan-500/80 border-cyan-300'
-                : 'bg-slate-900/90 border-slate-700'
+            variant === 'unknown'
+              ? 'bg-orange-600/90 border-orange-400'
+              : variant === 'threat'
+                ? 'bg-red-600/90 border-red-400'
+                : isSelected 
+                  ? 'bg-orange-500/90 border-orange-400' 
+                  : isGhost
+                    ? 'bg-cyan-500/80 border-cyan-300'
+                    : 'bg-slate-900/90 border-slate-700'
           }`}>
-            <p className="text-white font-bold text-xs whitespace-nowrap">{primaryLabel}</p>
+            <p className="text-white font-bold text-xs whitespace-nowrap">
+              {variant === 'unknown' ? '??? ' : variant === 'threat' ? '⚠️ ' : ''}{primaryLabel}
+            </p>
             {secondaryLabel && (
               <p className="text-slate-300 text-[10px] whitespace-nowrap">{secondaryLabel}</p>
+            )}
+            {(variant === 'unknown' || variant === 'threat') && (
+              <p className="text-slate-200 text-[10px] whitespace-nowrap mt-1">UNKNOWN</p>
             )}
             <div className="text-slate-400 text-[9px] font-mono mt-1 space-y-0.5">
               <p>Lat: {telemetryPosition.lat.toFixed(2)}°</p>

@@ -26,6 +26,8 @@ export default function SdaDashboard({ sessionCode }) {
   const [expandedSatellite, setExpandedSatellite] = useState(null);
   const [plannedManeuver, setPlannedManeuver] = useState(null);
   const [activeDropoutSatellite, setActiveDropoutSatellite] = useState(null);
+  const [unknownSatellites, setUnknownSatellites] = useState([]);
+  const [threatSatellites, setThreatSatellites] = useState([]);
   const [injects, setInjects] = useState([
     {
       id: 1,
@@ -181,14 +183,32 @@ export default function SdaDashboard({ sessionCode }) {
     const unsubscribe = onSnapshot(
       query(collection(db, 'sessions', sessionCode, 'injects'), where('team', '==', 'sda')),
       (snapshot) => {
+        const unknownSats = [];
+        const threatSats = [];
+        
         snapshot.forEach((docSnap) => {
           const inject = docSnap.data();
+          
+          // Handle satellite dropout
           if (inject.type === 'satellite-dropout' && inject.status === 'active' && inject.payload?.targetSatellite) {
             setActiveDropoutSatellite(inject.payload.targetSatellite);
           } else if (inject.type === 'satellite-dropout' && (inject.status === 'resolved' || inject.status === 'idle')) {
             setActiveDropoutSatellite(null);
           }
+          
+          // Handle unknown satellites
+          if (inject.type === 'unknown-satellite' && inject.status === 'active' && inject.payload) {
+            unknownSats.push(inject.payload);
+          }
+          
+          // Handle co-orbital threats
+          if (inject.type === 'coorbital-threat' && inject.status === 'active' && inject.payload) {
+            threatSats.push({ ...inject.payload, injectDocId: docSnap.id });
+          }
         });
+        
+        setUnknownSatellites(unknownSats);
+        setThreatSatellites(threatSats);
       }
     );
 
@@ -409,6 +429,24 @@ export default function SdaDashboard({ sessionCode }) {
 
       console.log('Maneuver committed successfully');
       commitSucceeded = true;
+
+      // Check if this maneuver resolves any co-orbital threats
+      const threatenedSatellite = plannedManeuver.satelliteId;
+      const activeThreats = threatSatellites.filter(t => t.targetSatellite === threatenedSatellite);
+      
+      if (activeThreats.length > 0) {
+        console.log(`[SDA] ✅ Maneuver on ${threatenedSatellite} - resolving ${activeThreats.length} co-orbital threat(s)`);
+        
+        for (const threat of activeThreats) {
+          if (threat.injectDocId) {
+            const injectRef = doc(db, 'sessions', sessionCode, 'injects', threat.injectDocId);
+            await updateDoc(injectRef, {
+              status: 'resolved',
+              resolvedAt: new Date().toISOString()
+            }).catch(err => console.error('[SDA] Failed to resolve threat:', err));
+          }
+        }
+      }
     } catch (error) {
       console.error('Commit maneuver error:', error);
       addInject({
@@ -596,6 +634,8 @@ export default function SdaDashboard({ sessionCode }) {
             onSelectSatellite={setSelectedSatellite}
             showOrbits={showOrbits}
             plannedManeuver={plannedManeuver}
+            unknownSatellites={unknownSatellites}
+            threatSatellites={threatSatellites}
           />
         </div>
 

@@ -8,3 +8,5 @@ export { clear } from './clear';
 export { help } from './help';
 export { whoami } from './whoami';
 export { uname } from './uname';
+export { rm } from './rm';
+export { scan } from './scan';

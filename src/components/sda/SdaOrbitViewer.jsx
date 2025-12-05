@@ -7,7 +7,7 @@ import OrbitPath from './OrbitPath';
 import { propagateSatellite } from '../../utils/orbitUtils';
 import { ensureOffsets, getTrackAdjustedDate } from '../../utils/maneuverLogic';
 
-export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelectSatellite, showOrbits, plannedManeuver }) {
+export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelectSatellite, showOrbits, plannedManeuver, unknownSatellites = [], threatSatellites = [] }) {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [satellitePositions, setSatellitePositions] = useState({});
     const [hoveredSatellite, setHoveredSatellite] = useState(null);
@@ -149,6 +149,77 @@ export default function SdaOrbitViewer({ satellites, selectedSatellite, onSelect
                                 onSelect={onSelectSatellite}
                                 onHover={setHoveredSatellite}
                                 offsets={sat.maneuverOffsets}
+                            />
+                        );
+                    })}
+
+                    {/* Unknown Satellites - no orbit paths */}
+                    {unknownSatellites.map(unkSat => {
+                        // Convert lat/lon/alt to 3D position (simplified - just place at target location)
+                        const lat = unkSat.targetLat * (Math.PI / 180);
+                        const lon = unkSat.targetLon * (Math.PI / 180);
+                        const earthRadius = 6371;
+                        const alt = unkSat.altitude;
+                        const r = (earthRadius + alt) / earthRadius;
+                        
+                        const position = {
+                            x: r * Math.cos(lat) * Math.cos(lon),
+                            y: r * Math.sin(lat),
+                            z: -r * Math.cos(lat) * Math.sin(lon),
+                            lat: unkSat.targetLat,
+                            lon: unkSat.targetLon,
+                            alt: unkSat.altitude
+                        };
+
+                        return (
+                            <SatelliteObject
+                                key={unkSat.id}
+                                satellite={{ 
+                                    id: unkSat.id, 
+                                    name: unkSat.name, 
+                                    type: 'unknown',
+                                    status: { health: 'unknown' }
+                                }}
+                                position={position}
+                                isSelected={selectedSatellite?.id === unkSat.id}
+                                onSelect={onSelectSatellite}
+                                onHover={setHoveredSatellite}
+                                variant="unknown"
+                            />
+                        );
+                    })}
+
+                    {/* Threat Satellites - shadow friendly satellites */}
+                    {threatSatellites.map(threat => {
+                        // Find the target satellite
+                        const targetSat = satellites.find(s => s.id === threat.targetSatellite);
+                        if (!targetSat) return null;
+                        
+                        // Propagate threat satellite using target's TLE but with a time offset
+                        // This makes it follow the exact same orbit but slightly ahead/behind
+                        const timeOffsetSeconds = (threat.offsetKm / 7.5) * 60; // ~7.5 km/s orbital velocity
+                        const threatTime = new Date(currentTime.getTime() + (timeOffsetSeconds * 1000));
+                        const effectiveDate = getTrackAdjustedDate(threatTime, targetSat.maneuverOffsets);
+                        const position = propagateSatellite(targetSat.tle, effectiveDate);
+                        
+                        if (!position) return null;
+
+                        return (
+                            <SatelliteObject
+                                key={threat.id}
+                                satellite={{ 
+                                    id: threat.id, 
+                                    name: threat.name, 
+                                    type: 'threat',
+                                    status: { health: 'unknown' },
+                                    tle: targetSat.tle
+                                }}
+                                position={position}
+                                isSelected={selectedSatellite?.id === threat.id}
+                                onSelect={onSelectSatellite}
+                                onHover={setHoveredSatellite}
+                                variant="threat"
+                                offsets={targetSat.maneuverOffsets}
                             />
                         );
                     })}

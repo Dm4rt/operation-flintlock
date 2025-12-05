@@ -5,7 +5,7 @@
  */
 
 export class VirtualFS {
-  constructor(fsData, useRealFS = false, visibilityMap = {}) {
+  constructor(fsData, useRealFS = false, visibilityMap = {}, socket = null) {
     // Support both old JSON format and new real filesystem format
     if (useRealFS) {
       // fsData is the root node from fsLoader
@@ -13,6 +13,7 @@ export class VirtualFS {
       this.useRealFS = true;
       this.currentPath = '/';  // Start at root for real filesystem
       this.visibilityMap = visibilityMap;
+      this.socket = socket;
       
       // Apply visibility map to .flint files
       this.applyVisibilityMap(this.root);
@@ -22,6 +23,7 @@ export class VirtualFS {
       this.useRealFS = false;
       this.currentPath = '/home/cyber';
       this.visibilityMap = {};
+      this.socket = socket;
     }
   }
 
@@ -233,6 +235,13 @@ export class VirtualFS {
   }
 
   /**
+   * Get current directory node
+   */
+  getCurrentNode() {
+    return this.getNode(this.currentPath);
+  }
+
+  /**
    * Get detailed info about directory contents
    * Only includes visible files
    */
@@ -265,5 +274,77 @@ export class VirtualFS {
     }
 
     return entries;
+  }
+
+  /**
+   * Delete a file
+   */
+  deleteFile(path) {
+    const normalizedPath = this.normalizePath(path);
+    const pathParts = normalizedPath.split('/').filter(Boolean);
+    
+    if (pathParts.length === 0) {
+      return { success: false, error: 'Cannot delete root directory' };
+    }
+
+    const filename = pathParts[pathParts.length - 1];
+    const parentPath = '/' + pathParts.slice(0, -1).join('/');
+    const parentNode = this.getNode(parentPath);
+
+    if (!parentNode || parentNode.type !== 'dir') {
+      return { success: false, error: 'No such file or directory' };
+    }
+
+    const children = parentNode.children || {};
+    if (!children[filename]) {
+      return { success: false, error: 'No such file or directory' };
+    }
+
+    if (children[filename].type !== 'file') {
+      return { success: false, error: 'Is a directory' };
+    }
+
+    // Delete the file
+    delete children[filename];
+    
+    // Emit deletion event if socket available
+    if (this.socket && this.socket.isConnected) {
+      this.socket.emit('cyber:file-deleted', { 
+        filename, 
+        path: normalizedPath 
+      });
+    }
+
+    return { success: true, path: normalizedPath };
+  }
+
+  /**
+   * Add a file to the filesystem (for virus inject gibberish files)
+   */
+  addFile(path, content = '') {
+    const normalizedPath = this.normalizePath(path);
+    const pathParts = normalizedPath.split('/').filter(Boolean);
+    
+    if (pathParts.length === 0) {
+      return { success: false, error: 'Invalid path' };
+    }
+
+    const filename = pathParts[pathParts.length - 1];
+    const parentPath = '/' + pathParts.slice(0, -1).join('/');
+    const parentNode = this.getNode(parentPath);
+
+    if (!parentNode || parentNode.type !== 'dir') {
+      return { success: false, error: 'Parent directory does not exist' };
+    }
+
+    const children = parentNode.children || {};
+    children[filename] = {
+      name: filename,
+      type: 'file',
+      content,
+      path: normalizedPath
+    };
+
+    return { success: true, path: normalizedPath };
   }
 }
