@@ -37,6 +37,8 @@ export default function SdaDashboard({ sessionCode }) {
   // Use refs to access latest values in Socket.IO listeners without causing re-renders
   const selectedSatelliteRef = useRef(selectedSatellite);
   const operationIdRef = useRef(sessionCode);
+  const lastBroadcastHash = useRef(null);
+  const lastSocketUpdateHash = useRef(null);
   
   useEffect(() => {
     selectedSatelliteRef.current = selectedSatellite;
@@ -148,6 +150,14 @@ export default function SdaDashboard({ sessionCode }) {
     if (!socket.isConnected) return;
 
     const unsubscribe = socket.on('sat:update', ({ satellites: remoteSats }) => {
+      // Prevent processing duplicate updates
+      const updateHash = JSON.stringify(remoteSats.map(s => ({ id: s.id, fuel: s.fuelPoints, offsets: s.maneuverOffsets })));
+      if (lastSocketUpdateHash.current === updateHash) {
+        console.log('[SDA] Ignoring duplicate socket update');
+        return;
+      }
+      lastSocketUpdateHash.current = updateHash;
+      
       console.log('Socket.IO satellite update received:', remoteSats.length, 'satellites');
       setSatellites(remoteSats);
       
@@ -180,8 +190,13 @@ export default function SdaDashboard({ sessionCode }) {
           };
         });
         
-        // Broadcast to all teams via Socket.IO
-        socket.emitSatelliteUpdate(updated);
+        // Only broadcast if meaningful data changed (not just position updates)
+        const broadcastHash = JSON.stringify(updated.map(s => ({ id: s.id, fuel: s.fuelPoints, offsets: s.maneuverOffsets, status: s.status })));
+        if (lastBroadcastHash.current !== broadcastHash) {
+          lastBroadcastHash.current = broadcastHash;
+          socket.emitSatelliteUpdate(updated);
+        }
+        
         return updated;
       });
     }, 1000);
@@ -324,8 +339,10 @@ export default function SdaDashboard({ sessionCode }) {
   };
 
   // Commit the planned maneuver to Firebase
+  const commitInProgressRef = useRef(false);
   const handleCommitManeuver = async () => {
-    if (!plannedManeuver) return;
+    if (!plannedManeuver || commitInProgressRef.current) return;
+    commitInProgressRef.current = true;
     
     const updateData = {
       maneuverOffsets: plannedManeuver.previewSatellite.maneuverOffsets,
@@ -385,6 +402,7 @@ export default function SdaDashboard({ sessionCode }) {
       });
 
       setPlannedManeuver(null);
+      commitInProgressRef.current = false;
     }
   };
 

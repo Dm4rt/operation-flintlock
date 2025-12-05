@@ -359,45 +359,6 @@ export default function SdrAdminPanel({ operationId }) {
                 isActive={visualsActive}
               />
             </div>
-
-            <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-semibold text-slate-200 uppercase tracking-[0.3em] text-[10px]">
-                  Active Signals
-                </span>
-                <span className="font-mono text-blue-200 text-sm">
-                  {transmissions.filter(isLocked).length} / {transmissions.length} LOCKED
-                </span>
-              </div>
-              <div className="space-y-2">
-                {transmissions.map((tx) => {
-                  const locked = isLocked(tx);
-                  const freqOff = Math.abs(centerFreq - tx.frequencyHz);
-                  return (
-                    <div
-                      key={tx.id}
-                      className={`flex items-center justify-between p-3 rounded-lg border ${
-                        locked
-                          ? 'bg-emerald-500/10 border-emerald-500/50'
-                          : 'bg-[#070b16] border-slate-800'
-                      }`}
-                    >
-                      <div>
-                        <p className="text-white text-sm font-semibold">{tx.name}</p>
-                        <p className="text-[11px] text-slate-400 mt-1">{tx.description}</p>
-                        <p className="text-[10px] uppercase tracking-[0.2em] mt-2 text-slate-500">
-                          {locked ? '✅ LOCKED' : `⚠ DETUNE ${formatFreq(freqOff)}`}
-                        </p>
-                      </div>
-                      <div className="text-right text-[11px] text-slate-400">
-                        <p>{formatFreq(tx.frequencyHz)}</p>
-                        <p>{formatFreq(tx.widthHz)} width</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </main>
         </div>
       </div>

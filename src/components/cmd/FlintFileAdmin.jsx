@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useFlintlockSocket } from '../../hooks/useFlintlockSocket';
 import { revealFlintFile, hideFlintFile } from '../../terminal/initFlintFiles';
 
@@ -6,6 +6,8 @@ export default function FlintFileAdmin({ sessionId }) {
   const socket = useFlintlockSocket(sessionId, 'admin', 'Admin');
   const [visibilityMap, setVisibilityMap] = useState({});
   const [flintFiles, setFlintFiles] = useState([]);
+  const toggleInProgressRef = useRef({});
+  const lastSocketUpdateRef = useRef({});
 
   // Load initial flint files from Firestore and subscribe to Socket.IO updates
   useEffect(() => {
@@ -34,6 +36,13 @@ export default function FlintFileAdmin({ sessionId }) {
     if (!socket.isConnected) return;
 
     const unsubscribe = socket.on('flint:visibility', ({ filename, visible }) => {
+      // Prevent processing updates we just sent
+      if (lastSocketUpdateRef.current[filename] === visible) {
+        console.log('[FlintFileAdmin] Ignoring echo update:', filename, visible);
+        return;
+      }
+      lastSocketUpdateRef.current[filename] = visible;
+      
       console.log('[FlintFileAdmin] Visibility update:', filename, visible);
       setVisibilityMap(prev => ({
         ...prev,
@@ -45,6 +54,13 @@ export default function FlintFileAdmin({ sessionId }) {
   }, [socket]);
 
   const handleToggle = async (filename) => {
+    // Prevent rapid-fire toggles
+    if (toggleInProgressRef.current[filename]) {
+      console.log('[FlintFileAdmin] Toggle already in progress for', filename);
+      return;
+    }
+    toggleInProgressRef.current[filename] = true;
+    
     const isCurrentlyVisible = visibilityMap[filename];
     const newVisibility = !isCurrentlyVisible;
     
@@ -56,6 +72,9 @@ export default function FlintFileAdmin({ sessionId }) {
         await hideFlintFile(sessionId, filename);
       }
       
+      // Track this update to prevent echo processing
+      lastSocketUpdateRef.current[filename] = newVisibility;
+      
       // Broadcast via Socket.IO for real-time updates
       socket.updateFlintVisibility(filename, newVisibility);
       
@@ -66,6 +85,11 @@ export default function FlintFileAdmin({ sessionId }) {
       }));
     } catch (error) {
       console.error('Failed to toggle visibility:', error);
+    } finally {
+      // Release lock after short delay
+      setTimeout(() => {
+        toggleInProgressRef.current[filename] = false;
+      }, 500);
     }
   };
 

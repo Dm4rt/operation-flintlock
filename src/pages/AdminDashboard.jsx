@@ -322,8 +322,18 @@ export default function AdminDashboard() {
     }
   }, [routeCode]);
 
+  // LOOP PREVENTION: Track incoming session updates to prevent re-processing
+  // This effect reads FROM Firestore and updates React state
+  const lastIncomingSessionRef = useRef(null);
+
   useEffect(() => {
     if (!session) return;
+
+    // Prevent processing the same session snapshot multiple times
+    // Without this guard, Firestore echoes would cause infinite re-renders
+    const sessionKey = `${session.id}-${session.currentRoundIndex}-${session.timeLeft}-${session.isRunning}`;
+    if (lastIncomingSessionRef.current === sessionKey) return;
+    lastIncomingSessionRef.current = sessionKey;
 
     const incomingSeconds = (() => {
       if (Array.isArray(session.roundDurationSeconds)) {
@@ -382,7 +392,11 @@ export default function AdminDashboard() {
       setLogs(session.logs);
       seededLogsRef.current = true;
     }
-  }, [session, currentRoundIndex]);
+  }, [session, currentRoundIndex, timeLeft]);
+
+  // LOOP PREVENTION: Track outgoing config writes to prevent echo loops
+  // This effect writes TO Firestore when local state changes
+  const lastSyncedConfigRef = useRef(null);
 
   useEffect(() => {
     if (!scenarioId || !session) return;
@@ -399,6 +413,12 @@ export default function AdminDashboard() {
     const roundIndexChanged = (session.currentRoundIndex ?? 0) !== currentRoundIndex;
     if (!minutesChanged && !secondsChanged && !roundIndexChanged) return;
 
+    // Prevent re-syncing the same config we just wrote to Firestore
+    // When Firestore echoes back our write via onSnapshot, this prevents a loop
+    const newConfigKey = JSON.stringify({ minuteDurations, secondDurations, totalRounds, currentRoundIndex });
+    if (lastSyncedConfigRef.current === newConfigKey) return;
+    lastSyncedConfigRef.current = newConfigKey;
+
     (async () => {
       try {
         await update({
@@ -412,7 +432,8 @@ export default function AdminDashboard() {
         console.error('Failed to sync round configuration', error);
       }
     })();
-  }, [scenarioId, session, rounds, totalRounds, currentRoundIndex, update]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenarioId, session, rounds, totalRounds, currentRoundIndex]);
 
   const initializeOperation = async () => {
     if (!scenarioId) return;

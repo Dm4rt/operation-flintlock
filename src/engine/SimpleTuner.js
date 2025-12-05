@@ -158,33 +158,39 @@ export default class SimpleTuner {
     }
 
     // For each transmission, compute a proximity score (0 = far, 1 = perfect)
-    // Use very tight tolerances so signal is barely audible until nearly perfect
+    // Use tighter tolerances so signal is only clear when settings are very close
     let bestProximity = 0;
     transmissions.forEach(tx => {
       const freqError = Math.abs(this.centerFreq - tx.frequencyHz);
       const bwError = Math.abs(this.bandwidthHz - tx.widthHz);
-      const freqTolerance = tx.widthHz * 0.6; // tight freq tolerance
-      const bwTolerance = tx.widthHz * 0.25; // tight bandwidth tolerance
+      
+      // Much tighter tolerances - require more precise tuning
+      const freqTolerance = tx.widthHz * 0.3; // was 0.6, now much tighter
+      const bwTolerance = tx.widthHz * 0.15; // was 0.25, now much tighter
 
       const freqScore = Math.max(0, 1 - freqError / freqTolerance);
       const bwScore = Math.max(0, 1 - bwError / bwTolerance);
-      const minScore = this.minDb <= tx.minDb + 10 ? 1 : 0.2;
-      const maxScore = this.maxDb >= tx.maxDb - 10 ? 1 : 0.2;
+      
+      // Make minDb and maxDb much more strict - need to be very close
+      const minError = Math.max(0, tx.minDb - this.minDb);
+      const maxError = Math.max(0, this.maxDb - tx.maxDb);
+      const minScore = Math.max(0, 1 - minError / 20); // was binary 1 or 0.2, now gradual
+      const maxScore = Math.max(0, 1 - maxError / 20); // was binary 1 or 0.2, now gradual
 
       const rawProximity = freqScore * bwScore * minScore * maxScore;
       
-      // Apply steep curve: only very high proximity values become audible
-      const proximity = Math.pow(rawProximity, 3); // cube it for steep falloff
+      // Apply even steeper curve: only near-perfect settings become audible
+      const proximity = Math.pow(rawProximity, 4); // was 3, now 4 for steeper falloff
       bestProximity = Math.max(bestProximity, proximity);
 
-      if (proximity > 0.15) {
+      if (proximity > 0.05) {
         // Start playing if not already
         this.ensureSignalPlaying(tx, now);
         // Fade signal in based on proximity
         const node = this.signalNodes.get(tx.id);
         if (node) {
-          // Below 0.7 proximity = mostly cut out by static
-          const targetGain = proximity < 0.7 ? MIN_GAIN : Math.min(0.9, (proximity - 0.6) * 2.25);
+          // Need much higher proximity to hear signal clearly
+          const targetGain = proximity < 0.8 ? MIN_GAIN : Math.min(0.85, (proximity - 0.75) * 3.4);
           node.gain.gain.setTargetAtTime(targetGain, now, 0.15);
         }
       } else {
@@ -193,16 +199,28 @@ export default class SimpleTuner {
       }
     });
 
-    // Static overtakes when proximity is low
+    // Static dominates much more aggressively when not tuned correctly
     if (this.staticGain) {
-      // Static stays loud until you're very close
-      const staticLevel = bestProximity < 0.7 ? 0.5 : Math.max(0.02, 0.5 * (1 - bestProximity));
+      // Static stays at max until you're extremely close
+      const staticLevel = bestProximity < 0.85 ? 0.65 : Math.max(0.01, 0.65 * (1 - bestProximity));
       this.staticGain.gain.setTargetAtTime(staticLevel, now, 0.15);
     }
   }
 
   ensureSignalPlaying(tx, now) {
-    if (this.signalNodes.has(tx.id)) return; // already playing
+    // Check if already playing AND source is still valid
+    const existing = this.signalNodes.get(tx.id);
+    if (existing && existing.source) {
+      // Verify the source hasn't been stopped/disconnected
+      // If it has a valid gain node connected, we're good
+      try {
+        // Source is still valid if we can access its properties
+        if (existing.source.buffer) return; // already playing
+      } catch (e) {
+        // Source was stopped, clean it up
+        this.signalNodes.delete(tx.id);
+      }
+    }
 
     const buf = this.bufferCache.get(tx.audioPath);
     if (!buf) return;
@@ -218,6 +236,11 @@ export default class SimpleTuner {
     gain.connect(this.masterGain);
     src.start();
 
+    // Track when source ends (shouldn't happen with loop=true, but just in case)
+    src.onended = () => {
+      this.signalNodes.delete(tx.id);
+    };
+
     // Don't auto-fade in here; let updateTuning control gain based on proximity
 
     this.signalNodes.set(tx.id, { source: src, gain, buffer: buf });
@@ -227,12 +250,17 @@ export default class SimpleTuner {
     const node = this.signalNodes.get(id);
     if (!node) return;
 
+    // Immediately remove from map to prevent duplicate creation
+    this.signalNodes.delete(id);
+
+    // Fade out and stop
     node.gain.gain.setTargetAtTime(MIN_GAIN, now, 0.2);
     setTimeout(() => {
       try {
         node.source.stop();
+        node.source.disconnect();
+        node.gain.disconnect();
       } catch (e) { /* ignore */ }
-      this.signalNodes.delete(id);
     }, 1000);
   }
 
