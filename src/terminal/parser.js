@@ -6,8 +6,9 @@
 import * as commands from './commands';
 
 export class CommandParser {
-  constructor(fs) {
+  constructor(fs, socket) {
     this.fs = fs;
+    this.socket = socket;
   }
 
   /**
@@ -35,7 +36,7 @@ export class CommandParser {
 
     // Execute command
     try {
-      return commands[command](this.fs, args);
+      return commands[command](this.fs, args, this.socket);
     } catch (error) {
       return {
         output: `Error executing ${command}: ${error.message}`,

@@ -38,8 +38,8 @@ export default function CyberTerminal({ operationId, sessionId }) {
         console.log('Root children:', Object.keys(fsRoot.children));
         
         // Create VirtualFS without socket initially (will be set later)
-        const filesystem = new VirtualFS(fsRoot, true, {}, null);
-        const cmdParser = new CommandParser(filesystem);
+        const filesystem = new VirtualFS(fsRoot, true, {}, null, operationId);
+        const cmdParser = new CommandParser(filesystem, null);
         
         setFs(filesystem);
         setParser(cmdParser);
@@ -72,6 +72,8 @@ export default function CyberTerminal({ operationId, sessionId }) {
     if (fs && socket.isConnected) {
       fs.socket = socket;
       console.log('[Cyber] Socket attached to filesystem');
+      // Update parser with socket
+      setParser(new CommandParser(fs, socket));
     }
   }, [fs, socket.isConnected]);
 
@@ -98,7 +100,7 @@ export default function CyberTerminal({ operationId, sessionId }) {
       }
       
       // Force re-render by updating parser
-      setParser(new CommandParser(fs));
+      setParser(new CommandParser(fs, socket));
     });
 
     return unsubscribe;

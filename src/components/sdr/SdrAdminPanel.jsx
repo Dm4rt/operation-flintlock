@@ -53,6 +53,12 @@ export default function SdrAdminPanel({ operationId }) {
   });
   const [showJammerForm, setShowJammerForm] = useState(false);
 
+  // Spectrum outage state
+  const [spectrumOutage, setSpectrumOutage] = useState({
+    active: false,
+    component: null // 'waterfall', 'spectrum', or 'tuning'
+  });
+
   const operationStarted = session?.operationStarted;
 
   // Register EW team
@@ -293,6 +299,77 @@ export default function SdrAdminPanel({ operationId }) {
               });
             }
 
+            // Handle morse code signal injects: add morse signal to spectrum
+            if ((data.type === 'morse-coords' || data.type === 'morse-island' || data.type === 'morse-sam') && 
+                data.status === 'active' && data.payload?.frequency) {
+              const signalFreqHz = data.payload.frequency;
+              const audioFile = data.payload.audioFile || 'coordsMorse.wav';
+              const signalId = `morse-signal-${data.type}`;
+              
+              console.log('[SDR/EW] Adding morse signal at', signalFreqHz / 1_000_000, 'MHz');
+              setJammerSignals(prev => {
+                // Check if signal already exists
+                const existingSignal = prev.find(s => s.id === signalId);
+                if (existingSignal) {
+                  return prev;
+                }
+                
+                return [
+                  ...prev,
+                  {
+                    id: signalId,
+                    frequencyHz: signalFreqHz,
+                    widthHz: 200_000,
+                    minDb: -100,
+                    maxDb: -35,
+                    peakStrength: 0.85,
+                    active: true,
+                    name: 'Unidentified Signal',
+                    audioPath: `/audio/${audioFile}`
+                  }
+                ];
+              });
+            }
+
+            // Remove morse signal when inject is reset to idle
+            if ((data.type === 'morse-coords' || data.type === 'morse-island' || data.type === 'morse-sam') && 
+                data.status === 'idle') {
+              const signalId = `morse-signal-${data.type}`;
+              console.log('[SDR/EW] Removing morse signal (inject reset)');
+              
+              setJammerSignals(prev => {
+                const hasSignal = prev.some(s => s.id === signalId);
+                if (!hasSignal) {
+                  return prev;
+                }
+                
+                if (tunerRef.current) {
+                  tunerRef.current.stopAll();
+                }
+                
+                return prev.filter(s => s.id !== signalId);
+              });
+            }
+
+            // Handle spectrum outage inject
+            if (data.type === 'spectrum-outage' && data.status === 'active' && data.payload?.component) {
+              console.log('[SDR/EW] Spectrum outage -', data.payload.component, 'failed');
+              setSpectrumOutage({
+                active: true,
+                component: data.payload.component
+              });
+            }
+
+            // Clear spectrum outage when resolved or reset
+            if (data.type === 'spectrum-outage' && (data.status === 'resolved' || data.status === 'idle')) {
+              console.log('[SDR/EW] 🔧 Spectrum outage cleared - status:', data.status);
+              console.log('[SDR/EW] 🔧 Resolved by:', data.resolvedBy);
+              setSpectrumOutage({
+                active: false,
+                component: null
+              });
+            }
+
             // Remove bad signal when inject is resolved or reset to idle
             if (data.type === 'satellite-dropout' && (data.status === 'resolved' || data.status === 'idle')) {
               console.log('[SDR/EW] Removing bad signal (inject resolved/reset)');
@@ -462,55 +539,69 @@ export default function SdrAdminPanel({ operationId }) {
 
         <div className="flex-1 flex">
           <aside className="w-72 bg-[#0c111f] border-r border-slate-900 px-4 py-6 flex flex-col gap-6">
-            <div className="bg-[#090d17] border border-slate-800 rounded-lg p-4">
-              <p className="text-[11px] uppercase text-slate-500 mb-3">Tuning Controls</p>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Center Frequency</span>
-                    <span className="font-mono text-slate-200">{formatFreq(centerFreq)}</span>
+            <div className={`bg-[#090d17] border border-slate-800 rounded-lg p-4 ${spectrumOutage.active && spectrumOutage.component === 'tuning' ? 'opacity-50 pointer-events-none' : ''}`}>
+              <p className="text-[11px] uppercase text-slate-500 mb-3">
+                Tuning Controls
+                {spectrumOutage.active && spectrumOutage.component === 'tuning' && (
+                  <span className="text-red-500 ml-2">⚠ OFFLINE</span>
+                )}
+              </p>
+              {spectrumOutage.active && spectrumOutage.component === 'tuning' ? (
+                <div className="h-48 bg-black rounded flex items-center justify-center border border-red-900/50">
+                  <div className="text-center">
+                    <p className="text-red-500 font-mono text-xs mb-1">⚠ SYSTEM OFFLINE ⚠</p>
+                    <p className="text-red-500/60 font-mono text-[10px]">Contact Cyber for repair</p>
                   </div>
-                  <input
-                    type="range"
-                    min={80_000_000}
-                    max={130_000_000}
-                    step={10_000}
-                    value={centerFreq}
-                    onChange={(e) => setCenterFreq(Number(e.target.value))}
-                    className="w-full accent-slate-200"
-                  />
                 </div>
-                <div>
-                  <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Bandwidth</span>
-                    <span className="font-mono text-slate-200">{formatFreq(bandwidthHz)}</span>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                      <span>Center Frequency</span>
+                      <span className="font-mono text-slate-200">{formatFreq(centerFreq)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={80_000_000}
+                      max={130_000_000}
+                      step={10_000}
+                      value={centerFreq}
+                      onChange={(e) => setCenterFreq(Number(e.target.value))}
+                      className="w-full accent-slate-200"
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min={50_000}
-                    max={500_000}
-                    step={10_000}
-                    value={bandwidthHz}
-                    onChange={(e) => setBandwidthHz(Number(e.target.value))}
-                    className="w-full accent-slate-200"
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                    <span>Display Span</span>
-                    <span className="font-mono text-slate-200">± {(span / 2_000_000).toFixed(2)} MHz</span>
+                  <div>
+                    <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                      <span>Bandwidth</span>
+                      <span className="font-mono text-slate-200">{formatFreq(bandwidthHz)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={50_000}
+                      max={500_000}
+                      step={10_000}
+                      value={bandwidthHz}
+                      onChange={(e) => setBandwidthHz(Number(e.target.value))}
+                      className="w-full accent-slate-200"
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min={2_000_000}
-                    max={40_000_000}
-                    step={250_000}
-                    value={span}
-                    onChange={(e) => handleSpanChange(Number(e.target.value))}
-                    className="w-full accent-slate-200"
-                  />
+                  <div>
+                    <div className="flex justify-between text-[11px] text-slate-400 mb-1">
+                      <span>Display Span</span>
+                      <span className="font-mono text-slate-200">± {(span / 2_000_000).toFixed(2)} MHz</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={2_000_000}
+                      max={40_000_000}
+                      step={250_000}
+                      value={span}
+                      onChange={(e) => handleSpanChange(Number(e.target.value))}
+                      className="w-full accent-slate-200"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="bg-[#090d17] border border-slate-800 rounded-lg p-4">
@@ -579,25 +670,43 @@ export default function SdrAdminPanel({ operationId }) {
                   {formatFreq(centerFreq)} ± {(span / 2_000_000).toFixed(2)} MHz
                 </span>
               </div>
-              <SpectrumCanvas
-                centerFreq={centerFreq}
-                span={span}
-                minDb={minDb}
-                maxDb={maxDb}
-                bandwidthHz={bandwidthHz}
-                transmissions={jammerSignals}
-                height={220}
-                onChangeCenterFreq={handleCenterChange}
-                onChangeSpan={handleSpanChange}
-                isActive={visualsActive}
-              />
-              <WaterfallCanvas
-                centerFreq={centerFreq}
-                span={span}
-                transmissions={jammerSignals}
-                height={380}
-                isActive={visualsActive}
-              />
+              {spectrumOutage.active && spectrumOutage.component === 'spectrum' ? (
+                <div className="h-[220px] bg-black rounded flex items-center justify-center border border-red-900/50">
+                  <div className="text-center">
+                    <p className="text-red-500 font-mono text-sm mb-1">⚠ SYSTEM OFFLINE ⚠</p>
+                    <p className="text-red-500/60 font-mono text-xs">Contact Cyber for repair</p>
+                  </div>
+                </div>
+              ) : (
+                <SpectrumCanvas
+                  centerFreq={centerFreq}
+                  span={span}
+                  minDb={minDb}
+                  maxDb={maxDb}
+                  bandwidthHz={bandwidthHz}
+                  transmissions={jammerSignals}
+                  height={220}
+                  onChangeCenterFreq={handleCenterChange}
+                  onChangeSpan={handleSpanChange}
+                  isActive={visualsActive}
+                />
+              )}
+              {spectrumOutage.active && spectrumOutage.component === 'waterfall' ? (
+                <div className="h-[380px] bg-black rounded flex items-center justify-center border border-red-900/50">
+                  <div className="text-center">
+                    <p className="text-red-500 font-mono text-sm mb-1">⚠ SYSTEM OFFLINE ⚠</p>
+                    <p className="text-red-500/60 font-mono text-xs">Contact Cyber for repair</p>
+                  </div>
+                </div>
+              ) : (
+                <WaterfallCanvas
+                  centerFreq={centerFreq}
+                  span={span}
+                  transmissions={jammerSignals}
+                  height={380}
+                  isActive={visualsActive}
+                />
+              )}
             </div>
 
             <div className="bg-[#050812] border border-slate-900 rounded-xl shadow-2xl p-4">

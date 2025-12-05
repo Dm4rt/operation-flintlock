@@ -254,6 +254,85 @@ export function initializeSockets(httpServer) {
     });
 
     // ========================================
+    // CYBER REPAIR EW SYSTEMS (Cyber → Resolve Inject)
+    // ========================================
+    socket.on('cyber:repair-ew', async (data) => {
+      const { component } = data;
+      const sessionId = socket.sessionId;
+      
+      if (!sessionId) {
+        console.error('[Socket] ❌ Repair failed: No sessionId');
+        return;
+      }
+      
+      console.log(`[Socket] 🔧 Cyber attempting repair: ${component}`);
+
+      try {
+        const db = admin.firestore();
+        const injectsRef = db.collection('sessions').doc(sessionId).collection('injects');
+        
+        // Find active spectrum-outage inject for EW team
+        const snapshot = await injectsRef
+          .where('team', '==', 'ew')
+          .where('type', '==', 'spectrum-outage')
+          .where('status', '==', 'active')
+          .get();
+
+        if (snapshot.empty) {
+          console.log('[Socket] ⚠️ No active spectrum-outage inject found');
+          socket.emit('repair:error', { message: 'No active outage to repair' });
+          return;
+        }
+
+        const doc = snapshot.docs[0];
+        const injectData = doc.data();
+        const correctComponent = injectData.payload?.component;
+
+        console.log(`[Socket] 🔍 Found inject:`, {
+          docId: doc.id,
+          currentStatus: injectData.status,
+          correctComponent,
+          attemptedComponent: component
+        });
+
+        if (component === correctComponent) {
+          // Correct component - resolve the inject
+          await doc.ref.update({
+            status: 'resolved',
+            resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+            resolvedBy: 'cyber'
+          });
+
+          console.log(`[Socket] ✅ Spectrum outage resolved - ${component} repaired correctly`);
+          console.log(`[Socket] 📝 Updated document: ${doc.id}`);
+          
+          // Notify all teams
+          io.to(`session:${sessionId}`).emit('inject:resolved', {
+            team: 'ew',
+            type: 'spectrum-outage',
+            resolvedBy: 'cyber',
+            component
+          });
+
+          socket.emit('repair:success', { 
+            message: `${component} repaired successfully!`,
+            component 
+          });
+        } else {
+          // Wrong component - send error
+          console.log(`[Socket] ❌ Wrong component - tried ${component}, need ${correctComponent}`);
+          socket.emit('repair:error', { 
+            message: `Repair failed - ${component} is not the problem`,
+            attempted: component
+          });
+        }
+      } catch (error) {
+        console.error('[Socket] ❌ Repair error:', error);
+        socket.emit('repair:error', { message: 'System error during repair' });
+      }
+    });
+
+    // ========================================
     // TEAM ACTIONS (Any → Session)
     // ========================================
     socket.on('team:action', (data) => {

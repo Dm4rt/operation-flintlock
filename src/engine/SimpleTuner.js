@@ -29,6 +29,9 @@ export default class SimpleTuner {
     this.bandwidthHz = 200_000;
     this.minDb = -120;
     this.maxDb = -20;
+    
+    // Track morse signals and their frequencies
+    this.activeMorseSignals = new Map(); // id → frequencyHz
   }
 
   async init() {
@@ -128,6 +131,8 @@ export default class SimpleTuner {
    * Also handles jamming: if signals overlap, highest peakStrength wins.
    */
   async updateTuning({ centerFreq, bandwidthHz, minDb, maxDb, allSignals }) {
+    const oldCenterFreq = this.centerFreq;
+    
     this.centerFreq = centerFreq ?? this.centerFreq;
     this.bandwidthHz = bandwidthHz ?? this.bandwidthHz;
     this.minDb = minDb ?? this.minDb;
@@ -136,6 +141,15 @@ export default class SimpleTuner {
     if (!this.isReady()) return;
 
     const now = this.context.currentTime;
+    
+    // If center frequency changed, stop all active morse signals
+    if (oldCenterFreq !== this.centerFreq && this.activeMorseSignals.size > 0) {
+      console.log('[Tuner] Frequency changed - stopping all morse signals');
+      this.activeMorseSignals.forEach((freq, id) => {
+        this.stopSignal(id, now);
+      });
+      this.activeMorseSignals.clear();
+    }
 
     if (this.isMuted) {
       if (this.staticGain) {
@@ -198,6 +212,13 @@ export default class SimpleTuner {
         const freqError = Math.abs(this.centerFreq - tx.frequencyHz);
         const bwError = Math.abs(this.bandwidthHz - tx.widthHz);
         
+        // Morse signals (Unidentified Signal) require exact tuning - stop if center freq changes
+        const isMorseSignal = tx.name === 'Unidentified Signal';
+        if (isMorseSignal && freqError > 10000) { // More than 10kHz off center
+          // Stop this morse signal immediately
+          continue;
+        }
+        
         const freqTolerance = tx.widthHz * 0.3;
         const bwTolerance = tx.widthHz * 0.15;
 
@@ -219,9 +240,16 @@ export default class SimpleTuner {
           signalsToPlay.add(tx.id);
           await this.ensureSignalPlaying(tx, now, tx.audioPath);
           
+          // Track morse signals when they start playing
+          if (isMorseSignal) {
+            this.activeMorseSignals.set(tx.id, tx.frequencyHz);
+          }
+          
           const node = this.signalNodes.get(tx.id);
           if (node) {
-            const targetGain = proximity < 0.8 ? MIN_GAIN : Math.min(0.85, (proximity - 0.75) * 3.4);
+            // Lower max volume for morse/inject signals (0.4 instead of 0.85)
+            const maxGain = isMorseSignal ? 0.4 : 0.85;
+            const targetGain = proximity < 0.8 ? MIN_GAIN : Math.min(maxGain, (proximity - 0.75) * 3.4);
             node.gain.gain.setTargetAtTime(targetGain, now, 0.15);
           }
         }
@@ -232,6 +260,7 @@ export default class SimpleTuner {
     this.signalNodes.forEach((node, id) => {
       if (!signalsToPlay.has(id)) {
         this.stopSignal(id, now);
+        this.activeMorseSignals.delete(id); // Remove from morse tracking
       }
     });
 

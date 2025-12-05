@@ -5,7 +5,7 @@
  */
 
 export class VirtualFS {
-  constructor(fsData, useRealFS = false, visibilityMap = {}, socket = null) {
+  constructor(fsData, useRealFS = false, visibilityMap = {}, socket = null, sessionId = null) {
     // Support both old JSON format and new real filesystem format
     if (useRealFS) {
       // fsData is the root node from fsLoader
@@ -14,6 +14,7 @@ export class VirtualFS {
       this.currentPath = '/';  // Start at root for real filesystem
       this.visibilityMap = visibilityMap;
       this.socket = socket;
+      this.sessionId = sessionId;
       
       // Apply visibility map to .flint files
       this.applyVisibilityMap(this.root);
@@ -24,6 +25,7 @@ export class VirtualFS {
       this.currentPath = '/home/cyber';
       this.visibilityMap = {};
       this.socket = socket;
+      this.sessionId = sessionId;
     }
   }
 

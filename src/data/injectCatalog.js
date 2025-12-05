@@ -67,9 +67,21 @@ export const INJECT_CATALOG = {
   ],
   ew: [
     {
-      id: 'unidentified-signal',
-      title: 'New Unidentified Signal',
-      description: 'New signal appears on spectrum. EW must detect, characterize, and report.',
+      id: 'morse-coords',
+      title: 'Morse Code: Coordinates',
+      description: 'Morse code transmission detected - contains coordinate information.',
+      icon: '📡'
+    },
+    {
+      id: 'morse-island',
+      title: 'Morse Code: Island',
+      description: 'Morse code transmission detected - island-related intelligence.',
+      icon: '📡'
+    },
+    {
+      id: 'morse-sam',
+      title: 'Morse Code: SAM Site',
+      description: 'Morse code transmission detected - SAM site information.',
       icon: '📡'
     },
     {

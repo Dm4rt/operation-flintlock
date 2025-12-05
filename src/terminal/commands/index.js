@@ -10,3 +10,4 @@ export { whoami } from './whoami';
 export { uname } from './uname';
 export { rm } from './rm';
 export { scan } from './scan';
+export { repair } from './repair';

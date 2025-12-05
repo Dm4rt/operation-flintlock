@@ -375,6 +375,57 @@ export default function AdminInjectPanel({ sessionId, socket }) {
       console.log('[AdminInjectPanel] 🔐 ENCRYPTED MESSAGE 3 (XOR)');
       console.log('  Encrypted:', payload.encryptedText);
       console.log('  Solution:', payload.solution);
+    } else if (nextStatus === 'active' && (inject.id === 'morse-coords' || inject.id === 'morse-island' || inject.id === 'morse-sam')) {
+      // Map inject ID to specific audio file
+      const audioMap = {
+        'morse-coords': 'coordsMorse.wav',
+        'morse-island': 'islandMorse.wav',
+        'morse-sam': 'samMorse.wav'
+      };
+      const audioFile = audioMap[inject.id];
+      
+      // Generate random frequency away from existing signals
+      const existingFreqs = [100.8e6, 98.5e6, 105.2e6, 92.1e6, 110.3e6, 88.7e6, 115.6e6];
+      let signalFreq;
+      let attempts = 0;
+      do {
+        signalFreq = 80e6 + Math.random() * 50e6; // 80-130 MHz
+        const tooClose = existingFreqs.some(f => Math.abs(f - signalFreq) < 2e6);
+        if (!tooClose) break;
+        attempts++;
+      } while (attempts < 50);
+      
+      payload = {
+        id: `signal-${inject.id}-${Date.now()}`,
+        frequency: signalFreq,
+        audioFile: audioFile
+      };
+      
+      console.log('[AdminInjectPanel] 📡 MORSE CODE SIGNAL INJECT');
+      console.log('  Type:', inject.id);
+      console.log('  Frequency:', (signalFreq / 1_000_000).toFixed(3), 'MHz');
+      console.log('  Audio File:', audioFile);
+      console.log('  📻 EW TUNING INSTRUCTIONS:');
+      console.log('    Center Frequency:', (signalFreq / 1_000_000).toFixed(3), 'MHz');
+      console.log('    Bandwidth: ~200 kHz');
+      console.log('    Audio: Morse code transmission');
+      console.log('    Listen and decode the morse message!');
+    } else if (nextStatus === 'active' && inject.id === 'spectrum-outage') {
+      // Randomly select which component fails
+      const components = ['waterfall', 'spectrum', 'tuning'];
+      const failedComponent = components[Math.floor(Math.random() * components.length)];
+      
+      payload = {
+        component: failedComponent
+      };
+      
+      console.log('[AdminInjectPanel] ⚡ SPECTRUM OUTAGE INJECT');
+      console.log('  Failed Component:', failedComponent);
+      console.log('  🔧 CYBER REPAIR OPTIONS:');
+      console.log('    repair waterfall');
+      console.log('    repair spectrum');
+      console.log('    repair tuning');
+      console.log('  ✅ CORRECT COMMAND: repair', failedComponent);
     }
 
     console.log('[AdminInjectPanel] Sending inject:', {
